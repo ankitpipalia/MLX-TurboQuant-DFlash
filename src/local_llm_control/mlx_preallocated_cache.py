@@ -13,6 +13,7 @@ from typing import Any
 import mlx.core as mx
 from mlx.utils import tree_map, tree_reduce
 from mlx_lm.models.cache import ArraysCache, KVCache, QuantizedKVCache
+from mlx_turboquant.kv_cache import TurboQuantKVCache
 
 
 class FixedQuantizedKVCache(QuantizedKVCache):
@@ -108,6 +109,46 @@ class FixedQuantizedKVCache(QuantizedKVCache):
             lambda total, part: total + part.nbytes,
             (self.keys, self.values),
             0,
+        )
+
+
+class FixedTurbo4KVCache(TurboQuantKVCache):
+    """A rotated TurboQuant cache backed by one fixed Metal allocation.
+
+    Borrows the fixed-arena storage from :class:`FixedQuantizedKVCache` while
+    keeping TurboQuant's key rotation, so stored keys stay in the frame the
+    patched attention rotates queries into.
+    """
+
+    def __init__(
+        self, max_size: int, group_size: int = 64, bits: int = 4
+    ) -> None:
+        super().__init__(group_size=group_size, bits=bits, qjl=False)
+        if self.qjl:
+            # ``update_and_fetch`` below delegates to the fixed-arena
+            # implementation, which never builds the QJL sketch/rnorm side
+            # buffers.  TurboQuant's attention wrapper then reads
+            # ``sketch is None`` and quietly uses the plain estimator, so QJL
+            # would look enabled while contributing nothing.  Fail loudly
+            # instead of silently degrading.
+            raise ValueError(
+                "FixedTurbo4KVCache cannot serve QJL: the fixed arena "
+                "reserves no sketch buffers"
+            )
+        if max_size <= 0:
+            raise ValueError("max_size must be positive")
+        self.max_size = max_size
+
+    reserve = FixedQuantizedKVCache.reserve
+    empty = FixedQuantizedKVCache.empty
+
+    @property
+    def nbytes(self) -> int:
+        return FixedQuantizedKVCache.nbytes.fget(self)
+
+    def update_and_fetch(self, keys: Any, values: Any):
+        return FixedQuantizedKVCache.update_and_fetch(
+            self, self.rotate_key(keys), values
         )
 
 

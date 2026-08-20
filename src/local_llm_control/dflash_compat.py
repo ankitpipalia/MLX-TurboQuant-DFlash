@@ -13,6 +13,8 @@ import os
 import weakref
 from typing import Any
 
+from .dflash_turbo4_snapshot import install_turbo4_prefix_snapshots
+
 
 def normalize_draft_config(params: dict[str, Any]) -> dict[str, Any]:
     """Return a copy compatible with dflash-mlx's draft argument parser."""
@@ -84,11 +86,33 @@ def install_dflash_turboquant() -> None:
 
     import mlx.core as mx
     from dflash_mlx.engine.target_qwen_gdn import QwenGdnTargetOps
-    from mlx_lm.models.cache import QuantizedKVCache
+    from mlx_lm.models.cache import KVCache, QuantizedKVCache
     from mlx_turboquant.kv_cache import TurboQuantKVCache
     from mlx_turboquant.patch import register
 
-    from .mlx_preallocated_cache import FixedQuantizedKVCache
+    from .dflash_turbo4_snapshot import (
+        set_active_format_version,
+        snapshots_enabled,
+        turbo4_format_version,
+    )
+    from .mlx_preallocated_cache import FixedTurbo4KVCache
+
+    # With prefix snapshots enabled the profile omits --quantize-kv-cache, so
+    # DFlash hands back native KVCache entries for the full-attention layers and
+    # we convert those instead. That keeps ``runtime.quantize_kv_cache`` false,
+    # which is what lifts the blanket restore prohibition -- every guard inside
+    # the target ops tests the cache object rather than the flag, so behaviour
+    # is unchanged. RotatingKVCache is not a KVCache subclass, so a windowed
+    # cache is still left alone.
+    convertible: tuple[type, ...] = (QuantizedKVCache,)
+    if snapshots_enabled():
+        convertible = (QuantizedKVCache, KVCache)
+        probe = TurboQuantKVCache(group_size=64, bits=4, qjl=False)
+        set_active_format_version(
+            turbo4_format_version(
+                bits=4, group_size=64, seed=int(probe.seed), qjl=False
+            )
+        )
 
     max_size_raw = os.getenv("LOCAL_LLM_DFLASH_TURBOQUANT_MAX_SIZE", "0")
     try:
@@ -101,34 +125,6 @@ def install_dflash_turboquant() -> None:
         raise ValueError(
             "LOCAL_LLM_DFLASH_TURBOQUANT_MAX_SIZE must be >= 0"
         )
-
-    class DFlashFixedTurbo4KVCache(TurboQuantKVCache):
-        def __init__(self) -> None:
-            super().__init__(group_size=64, bits=4, qjl=False)
-            if self.qjl:
-                # ``update_and_fetch`` below delegates to the fixed-arena
-                # implementation, which never builds the QJL sketch/rnorm side
-                # buffers.  TurboQuant's attention wrapper then reads
-                # ``sketch is None`` and quietly uses the plain estimator, so
-                # QJL would look enabled while contributing nothing.  Fail loudly
-                # instead of silently degrading.
-                raise ValueError(
-                    "DFlashFixedTurbo4KVCache cannot serve QJL: the fixed "
-                    "arena reserves no sketch buffers"
-                )
-            self.max_size = max_size
-
-        reserve = FixedQuantizedKVCache.reserve
-        empty = FixedQuantizedKVCache.empty
-
-        @property
-        def nbytes(self) -> int:
-            return FixedQuantizedKVCache.nbytes.fget(self)
-
-        def update_and_fetch(self, keys: Any, values: Any):
-            return FixedQuantizedKVCache.update_and_fetch(
-                self, self.rotate_key(keys), values
-            )
 
     current = QwenGdnTargetOps.make_cache
     if getattr(current, "_local_llm_dflash_turbo4", False):
@@ -177,13 +173,13 @@ def install_dflash_turboquant() -> None:
                 ),
             )
         for index, cache in enumerate(caches):
-            if isinstance(cache, QuantizedKVCache) and not isinstance(
+            if isinstance(cache, convertible) and not isinstance(
                 cache, TurboQuantKVCache
             ):
                 if max_size:
                     fixed = fixed_pool.get(index)
                     if fixed is None:
-                        fixed = DFlashFixedTurbo4KVCache()
+                        fixed = FixedTurbo4KVCache(max_size=max_size)
                         fixed.reserve(
                             batch_size=1,
                             n_kv_heads=int(text_args.num_key_value_heads),
@@ -252,6 +248,9 @@ def install_dflash_turboquant() -> None:
 def main() -> None:
     install_config_compatibility()
     install_dflash_turboquant()
+    # After the cache bridge, which registers the format identity the prefix key
+    # is stamped with, and before the CLI imports the codec's consumers.
+    install_turbo4_prefix_snapshots()
     from dflash_mlx.cli import main as upstream_main
 
     upstream_main()

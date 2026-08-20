@@ -566,6 +566,51 @@ command = [
   "--log-level", "INFO"
 ]
 
+# MILESTONE 1 of Turbo4 prefix reuse: compressed KV *and* exact prefix reuse in
+# one runtime, which upstream cannot do (its codec stores one array per side and
+# rejects quantized caches, and restore is disabled outright whenever
+# --quantize-kv-cache is set).
+#
+# Note the deliberate absence of --quantize-kv-cache. DFlash therefore builds
+# native KVCache entries for the 16 full-attention layers and our bridge
+# converts those to rotated Turbo4, which keeps runtime.quantize_kv_cache false
+# and so lifts the blanket restore prohibition. Every guard inside the target
+# ops tests the cache object rather than the flag, so behaviour is unchanged;
+# only the SummaryEvent telemetry field misreports.
+#
+# L2 stays off: the on-disk schema stores one array per side and cannot carry a
+# packed triple, so a write fails closed with a clear error. Context is 128K
+# rather than 262K to keep the first validation cheap (2.25 GiB arena).
+[profiles.mlx-dflash2-qwen38-q4-turbo4-cached]
+engine = "mlx-dflash"
+description = "EXPERIMENTAL M1: Qwen3.8 27B Q4 + DFlash2 + Turbo4 KV with exact prefix reuse; 128K, L1 only"
+port = 8098
+health_path = "/v1/models"
+environment = { LOCAL_LLM_DFLASH_TURBOQUANT = "turbo4", LOCAL_LLM_DFLASH_TURBOQUANT_MAX_SIZE = "131136", LOCAL_LLM_DFLASH_TURBOQUANT_SNAPSHOTS = "1" }
+command = [
+  "{DFLASH_BIN}", "serve",
+  "--model", "{QWEN38_DFLASH2_MODEL}",
+  "--draft", "{QWEN38_DFLASH2_DRAFT}",
+  "--draft-quant", "none",
+  "--verify-mode", "adaptive",
+  "--verify-len-cap", "4",
+  "--copyspec-mode", "conservative",
+  "--prefill-step-size", "512",
+  "--draft-sink-size", "64",
+  "--draft-window-size", "2048",
+  "--draft-full-context-min-ctx", "16384",
+  "--dflash-max-ctx", "131072",
+  "--prefix-cache",
+  "--prefix-cache-max-entries", "1",
+  "--no-prefix-cache-l2",
+  "--wired-limit", "auto",
+  "--cache-limit", "2GB",
+  "--host", "127.0.0.1", "--port", "8098",
+  "--chat-template-args", '{"enable_thinking":false}',
+  "--max-tokens", "4096",
+  "--log-level", "INFO"
+]
+
 # Native target KV permits exact prefix snapshot reuse. It uses about twice the
 # long-context KV memory of the capacity profile, so validate depth separately.
 [profiles.mlx-dflash2-qwen38-q4-cached]

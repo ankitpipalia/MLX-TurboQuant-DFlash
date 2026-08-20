@@ -445,3 +445,25 @@ def test_current_dflash_nested_schema_is_normalized_without_mutation() -> None:
     assert normalized["rope_theta"] == 10_000_000
     assert "block_size" not in original
     assert "rope_theta" not in original
+
+
+def test_turbo4_cached_profile_pairs_compressed_kv_with_prefix_reuse() -> None:
+    """The one profile where Turbo4 and exact prefix reuse must coexist."""
+    profile = load_settings().profiles["mlx-dflash2-qwen38-q4-turbo4-cached"]
+    environment = dict(profile.environment)
+
+    assert environment["LOCAL_LLM_DFLASH_TURBOQUANT"] == "turbo4"
+    assert environment["LOCAL_LLM_DFLASH_TURBOQUANT_SNAPSHOTS"] == "1"
+
+    # Deliberately absent: with the flag set, upstream zeroes snap_prefix_len
+    # for every request and no amount of codec work would restore a prefix.
+    assert "--quantize-kv-cache" not in profile.command
+
+    assert "--prefix-cache" in profile.command
+    # The L2 schema stores one array per side and cannot carry a packed triple.
+    assert "--no-prefix-cache-l2" in profile.command
+
+    arena = int(environment["LOCAL_LLM_DFLASH_TURBOQUANT_MAX_SIZE"])
+    logical = int(profile.command[profile.command.index("--dflash-max-ctx") + 1])
+    cap = int(profile.command[profile.command.index("--verify-len-cap") + 1])
+    assert arena >= logical + cap, "no room for the append-then-trim overshoot"

@@ -163,17 +163,39 @@ changes rather than silently computing `Q·R(K)ᵀ`.
   `--verify-len-cap` of the arena that then generates will overflow mid-stream.
   The client-side 250,000 limit closes this for OpenCode traffic; a
   misconfigured client is still exposed.
-- **DFlash2 + Turbo4 + persistent prefix reuse needs real work**, not a flag.
-  Two independent upstream blocks: `spec_epoch.py` forces `snap_prefix_len = 0`
-  whenever KV is quantized, and the snapshot codec has no quantized branch (and
-  demands exact-length arrays a fixed arena cannot provide). A TurboQuant
-  snapshot/hydration codec is the single highest-value next step; until it
-  exists, serial + APC should win any long-running agent session regardless of
-  isolated decode benchmarks.
+- **DFlash2 + Turbo4 prefix reuse is implemented but unmeasured.**
+  `mlx-dflash2-qwen38-q4-turbo4-cached` pairs compressed KV with exact prefix
+  reuse at 128K, L1 only. It is correctness-tested but has **no throughput or
+  retrieval numbers yet**, so serial + APC remains the production path until it
+  is benchmarked against an append trace. L2 disk snapshots and generation
+  sidecars are still unimplemented — the L2 schema stores one array per side and
+  a write fails closed, and `sidecar_eligible` excludes quantized caches, which
+  caps reuse at the cold-prompt frontier rather than following the conversation.
 - `mlx-lm` is pinned `>=0.31.3` while we monkeypatch its internals. Pin it
   exactly and upgrade deliberately with a parity run.
 - ~2.6 GiB of stale `.incomplete` downloads sit in
   `EigenLabs--Qwen3.8-27B-4bit/.cache`, reclaimable.
+
+## Known-bad in the pinned DFlash revision
+
+`serve.py` parses `repetition_penalty`, `presence_penalty`, `frequency_penalty`,
+`xtc_probability`, `xtc_threshold`, `logit_bias`, `logprobs` and `top_logprobs`
+from the request body, but `runtime.py` forwards only `temperature`, `top_p`,
+`top_k` and `min_p`, and `stream_dflash_generate_impl` accepts only those four.
+So on the DFlash path those parameters are **accepted and silently ignored** —
+not rejected, not honoured. Only the experimental DFlash profiles are affected;
+the serial mlx-vlm production path does not go through that engine. Any request
+setting them should be routed to target-only AR before the DFlash server can be
+called OpenCode-ready.
+
+## Reproducing the environment
+
+`uv.lock` is committed and pins `mlx-lm 0.31.3`, `mlx 0.32.0`,
+`mlx-vlm 0.6.13`, `dflash-mlx 0.1.10+omlx.6`, `mlx-turboquant 0.0.2` and
+`turboquant-mlx 0.3.0`. Install with `uv sync --frozen`. The `mlx-lm>=0.31.3`
+declaration in `pyproject.toml` is looser than the lock, and this repo
+monkeypatches mlx-lm internals, so an unconstrained rebuild can silently change
+`QuantizedKVCache`, SDPA dispatch or cache layouts.
 
 ## Validating config changes
 

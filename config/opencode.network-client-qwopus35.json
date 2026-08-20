@@ -1,0 +1,131 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "local-mlx": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "M1 Max MLX — Qwopus 35B coder fixed 262K headless",
+      "options": {
+        "baseURL": "http://192.168.1.117:8098/v1",
+        "apiKey": "sk-opencode",
+        "timeout": 3600000,
+        "chunkTimeout": 3600000
+      },
+      "models": {
+        "default_model": {
+          "name": "Qwopus3.6 35B-A3B Coder 5-bit — Turbo4 262K + reuse",
+          "limit": {
+            "context": 262144,
+            "output": 8192
+          }
+        }
+      }
+    }
+  },
+  "enabled_providers": ["local-mlx"],
+  "model": "local-mlx/default_model",
+  "small_model": "local-mlx/default_model",
+  "default_agent": "build",
+  "compaction": {
+    "auto": false,
+    "prune": false,
+    "reserved": 8192
+  },
+  "agent": {
+    "title": {
+      "disable": true
+    }
+  },
+  "permission": {
+    "*": "allow",
+    "task": "deny"
+  },
+  "mcp": {
+    "filesystem": {
+      "type": "local",
+      "command": ["docker", "run", "--rm", "-i", "--volume", "/Users/ankit/Git:/workspace:ro", "ghcr.io/mark3labs/mcp-filesystem-server:latest", "/workspace"],
+      "enabled": true
+    },
+    "kubernetes": {
+      "type": "local",
+      "command": ["npx", "-y", "kubernetes-mcp-server@latest", "--read-only"],
+      "enabled": true
+    },
+    "shell": {
+      "type": "local",
+      "command": ["npx", "-y", "@mako10k/mcp-shell-server"],
+      "environment": {
+        "MCP_SHELL_SECURITY_MODE": "restrictive",
+        "MCP_SHELL_DEFAULT_WORKDIR": "/Users/ankit/Git",
+        "MCP_SHELL_ALLOWED_WORKDIRS": "/Users/ankit/Git",
+        "MCP_SHELL_MAX_EXECUTION_TIME": "300"
+      },
+      "enabled": true
+    },
+    "trivy": {
+      "type": "local",
+      "command": ["trivy", "mcp"],
+      "enabled": true
+    },
+    "aws-api": {
+      "type": "local",
+      "command": ["docker", "run", "--rm", "-i", "--env", "AWS_REGION=us-east-1", "--env", "AWS_PROFILE=axiad-dev", "--env", "READ_OPERATIONS_ONLY=true", "--volume", "/Users/ankit/.aws:/root/.aws:ro", "public.ecr.aws/awslabs-mcp/awslabs/aws-api-mcp-server:latest"],
+      "enabled": true
+    },
+    "aws-docs": {
+      "type": "local",
+      "command": ["uvx", "awslabs.aws-documentation-mcp-server@latest"],
+      "environment": {
+        "FASTMCP_LOG_LEVEL": "ERROR",
+        "AWS_PROFILE": "axiad-dev",
+        "AWS_REGION": "us-east-1"
+      },
+      "enabled": true
+    },
+    "terraform": {
+      "type": "local",
+      "command": ["docker", "run", "--rm", "-i", "--env", "TFE_TOKEN", "--env", "TFE_ADDRESS=https://app.terraform.io", "hashicorp/terraform-mcp-server:latest"],
+      "environment": {
+        "TFE_TOKEN": "${env:TFE_TOKEN}"
+      },
+      "enabled": true
+    },
+    "docker": {
+      "type": "local",
+      "command": ["npx", "-y", "mcp-docker-server"],
+      "enabled": true
+    },
+    "tavily": {
+      "type": "local",
+      "command": ["npx", "-y", "@helios123/tavily-mcp"],
+      "environment": {
+        "TAVILY_API_KEY": "${env:TAVILY_API_KEY}"
+      },
+      "enabled": true
+    },
+    "puppeteer": {
+      "type": "local",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-puppeteer"],
+      "enabled": true
+    },
+    "context7": {
+      "type": "local",
+      "command": ["npx", "-y", "@upstash/context7-mcp@latest"],
+      "enabled": true
+    },
+    "fetch": {
+      "type": "local",
+      "command": ["uvx", "mcp-server-fetch"],
+      "enabled": true
+    },
+    "github": {
+      "type": "remote",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "enabled": true,
+      "oauth": false,
+      "headers": {
+        "Authorization": "Bearer ${env:GITHUB_TOKEN}"
+      }
+    }
+  },
+  "share": "disabled"
+}

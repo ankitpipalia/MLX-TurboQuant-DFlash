@@ -1,0 +1,41 @@
+[project]
+name = "local-llm-control"
+version = "0.1.0"
+description = "Single-model control plane for high-memory local LLM runtimes on Apple Silicon"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.116",
+  "httpx>=0.28",
+  "mlx-lm>=0.31.3",
+  "mlx-vlm==0.6.13",
+  "mlx-turboquant",
+  "psutil>=7.0",
+  "turboquant-mlx",
+  "uvicorn>=0.35",
+]
+
+[project.scripts]
+llm-control = "local_llm_control.cli:main"
+dflash-compat = "local_llm_control.dflash_compat:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/local_llm_control"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.uv.sources]
+mlx-vlm = { git = "https://github.com/Blaizzy/mlx-vlm.git", rev = "7ee8eba362e9c462712dbb7294e9c85e15b66720" }
+mlx-turboquant = { git = "https://github.com/pythongiant/mlx_turboquant.git", rev = "0846d6aac9e3720a59de7a52782a9af63ad0146f" }
+turboquant-mlx = { git = "https://github.com/arozanov/turboquant-mlx.git", rev = "6e928d715595dee9f6b6cc3968baa44e1f408d28" }
+dflash-mlx = { git = "https://github.com/jundot/dflash-mlx.git", rev = "b7f625504a733216d9e06caa3f7847a048241d94" }
+
+[dependency-groups]
+dev = ["httpx2==2.10.0", "pytest>=8.4"]
+dflash = ["dflash-mlx"]
+dspark = ["mlx-dspark==0.8.1"]

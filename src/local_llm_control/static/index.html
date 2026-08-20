@@ -1,0 +1,1073 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Local LLM Control Center</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ── Top Status Rail ─────────────────────────────────────────────── -->
+  <header class="top-rail">
+    <div class="top-rail-left">
+      <h1 class="brand">LLM Control</h1>
+      <div class="status-pills" id="statusPills">
+        <span class="pill muted">connecting…</span>
+      </div>
+    </div>
+    <div class="top-rail-right">
+      <div id="warningRail" class="flex gap-1"></div>
+      <div id="powerDisplay" class="pill purple"></div>
+      <button onclick="toggleFullscreen()" class="pill muted" title="Fullscreen">⛶</button>
+    </div>
+  </header>
+
+  <!-- ── Sidebar Navigation ─────────────────────────────────────────── -->
+  <nav class="sidebar" id="sidebar">
+    <div class="nav-item active" data-tab="dashboard">
+      <span class="nav-icon">◈</span><span>Dashboard</span>
+    </div>
+    <div class="nav-item" data-tab="services">
+      <span class="nav-icon">⬡</span><span>Services</span>
+    </div>
+    <div class="nav-item" data-tab="models">
+      <span class="nav-icon">◉</span><span>Models</span>
+    </div>
+    <div class="nav-item" data-tab="runtime">
+      <span class="nav-icon">⟳</span><span>Runtime</span>
+    </div>
+    <div class="nav-item" data-tab="chat">
+      <span class="nav-icon">✦</span><span>Chat</span>
+    </div>
+    <div class="nav-item" data-tab="benchmark">
+      <span class="nav-icon">⚡</span><span>Benchmark</span>
+    </div>
+    <div class="nav-item" data-tab="power">
+      <span class="nav-icon">⊛</span><span>Power</span>
+    </div>
+    <div class="nav-item" data-tab="monitor">
+      <span class="nav-icon">▦</span><span>Monitor</span>
+    </div>
+    <div class="nav-item" data-tab="logs">
+      <span class="nav-icon">☰</span><span>Logs</span>
+    </div>
+    <div class="nav-item" data-tab="settings">
+      <span class="nav-icon">⚙</span><span>Settings</span>
+    </div>
+  </nav>
+
+  <!-- ── Main Content ───────────────────────────────────────────────── -->
+  <main class="main">
+
+    <!-- ████  DASHBOARD  ████ -->
+    <div class="tab-content active" id="tab-dashboard">
+
+      <!-- Stat cards -->
+      <div class="grid-4 mb-4">
+        <div class="stat-card">
+          <div class="label">Unified GPU Memory</div>
+          <div class="value text-accent" id="vramValue">—</div>
+          <div class="unit">GiB used</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">GPU Power</div>
+          <div class="value text-yellow" id="powerValue">—</div>
+          <div class="unit">Watts</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Temperature</div>
+          <div class="value text-green" id="tempValue">—</div>
+          <div class="unit">°C</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Context</div>
+          <div class="value text-purple" id="ctxValue">—</div>
+          <div class="unit">tokens</div>
+        </div>
+      </div>
+
+      <!-- Service control + Session stats -->
+      <div class="grid-2 mb-4">
+        <div class="panel">
+          <h2>Service Control</h2>
+          <div class="flex gap-2 mb-4 flex-wrap">
+            <button class="success" onclick="serviceAction('start')">▶ Start</button>
+            <button class="danger"  onclick="serviceAction('stop')">◼ Stop</button>
+            <button class="warn"    onclick="serviceAction('restart')">↻ Restart</button>
+            <button                 onclick="serviceAction('clean')">⟲ Clean</button>
+            <button
+              class="normal-mode"
+              id="normalMacosButton"
+              data-normal-macos-button
+              onclick="leaveLlmMode()"
+              title="Stop inference, release reserved Metal memory, disable the sleep guard, and restore normal macOS behavior"
+            > Normal macOS — Release GPU</button>
+          </div>
+          <div id="serviceStatus" class="font-mono font-sm" style="color:var(--muted)"></div>
+          <div id="normalModeStatus" class="font-sm mt-2 muted">
+            Stops inference and returns the Metal wired-memory ceiling to the macOS default. Lid must be open.
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="flex justify-between items-center mb-2">
+            <h2>Session Stats</h2>
+            <button onclick="resetStats()" class="muted" style="font-size:11px;padding:3px 8px">↺ Reset</button>
+          </div>
+          <div class="grid-2 gap-2">
+            <div class="stat-card">
+              <div class="label">Checkpoints</div>
+              <div class="value text-accent" id="statsCheckpoints">0</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">Restored</div>
+              <div class="value text-green" id="statsRestored">0</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">Forced</div>
+              <div class="value text-red" id="statsForced">0</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">Avg Prefill</div>
+              <div class="value" id="statsAvgLat">—</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">p95 Prefill</div>
+              <div class="value" id="statsP95">—</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VRAM bar -->
+      <div class="panel mb-4">
+        <h2>Unified Memory Used by GPU</h2>
+        <div class="progress large mb-2">
+          <div class="progress-bar" id="vramBar" style="width:0%"></div>
+        </div>
+        <div class="flex justify-between font-sm" style="margin-top:6px;color:var(--muted)">
+          <span id="vramUsed" class="font-mono">—</span>
+          <span id="vramTotal" class="font-mono">—</span>
+        </div>
+      </div>
+
+      <!-- VRAM history chart -->
+      <div class="panel mb-4">
+        <div class="flex justify-between items-center mb-2">
+          <h2>VRAM History</h2>
+          <div class="flex gap-1" id="vramWindowBtns">
+            <button class="window-btn pill cyan" data-window="15m" style="font-size:11px;padding:2px 8px;cursor:pointer">15m</button>
+            <button class="window-btn pill muted" data-window="1h"  style="font-size:11px;padding:2px 8px;cursor:pointer">1h</button>
+            <button class="window-btn pill muted" data-window="6h"  style="font-size:11px;padding:2px 8px;cursor:pointer">6h</button>
+            <button class="window-btn pill muted" data-window="24h" style="font-size:11px;padding:2px 8px;cursor:pointer">24h</button>
+          </div>
+        </div>
+        <canvas id="vramChart" style="width:100%;height:120px;display:block;border-radius:4px;background:rgba(0,0,0,.25)"></canvas>
+        <div class="flex gap-4 font-sm" style="margin-top:5px">
+          <span style="color:#22d3ee">■ Used</span>
+          <span style="color:#a855f7">■ App VRAM</span>
+        </div>
+        <div id="vramChartStats" class="font-sm" style="color:var(--muted);margin-top:2px"></div>
+      </div>
+
+      <!-- Config summary -->
+      <div class="panel">
+        <h2>Current Config</h2>
+        <div id="configSummary" class="font-sm" style="color:var(--muted)">Loading…</div>
+      </div>
+
+    </div><!-- /dashboard -->
+
+    <!-- ████  SERVICES  ████ -->
+    <div class="tab-content" id="tab-services">
+
+      <div class="panel mb-4">
+        <div class="flex justify-between items-center mb-4">
+          <h2>Stack Services <span id="stackBuild" class="muted" style="font-size:10px"></span></h2>
+          <button onclick="loadServices()" class="muted" style="font-size:11px;padding:3px 8px">↻ Refresh</button>
+        </div>
+        <table class="data" id="servicesTable">
+          <thead>
+            <tr><th>Service</th><th>Status</th><th>Health</th><th>Port</th><th>PID</th><th>Actions</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <pre id="svcLogView" style="display:none;max-height:320px;overflow:auto;font-size:10px;margin-top:10px;background:rgba(0,0,0,.4);padding:10px;border-radius:6px"></pre>
+      </div>
+
+      <div class="grid-2 mb-4">
+        <div class="panel">
+          <h2>🔬 Deep Research (TTD-DR)</h2>
+          <div class="font-sm muted" style="margin-bottom:8px">Server-side web research via optillm. <b>Occupies the llama slot for minutes to tens of minutes</b> — coding clients will queue behind it. Report saved to Results.</div>
+          <textarea id="researchQ" style="width:100%;height:60px;resize:vertical" placeholder="Research question…"></textarea>
+          <div class="flex gap-2 mt-2 items-center flex-wrap">
+            <label class="font-sm">depth <input type="number" id="researchDepth" value="3" min="1" max="5" style="width:55px"></label>
+            <label class="font-sm">sources <input type="number" id="researchSources" value="15" min="5" max="30" style="width:55px"></label>
+            <label class="font-sm">max tok <input type="number" id="researchMaxTok" value="4096" min="1024" style="width:75px"></label>
+            <button class="warn" onclick="startResearch()">▶ Run research</button>
+          </div>
+          <div id="researchStatus" class="font-sm mt-2" style="color:var(--muted)"></div>
+        </div>
+        <div class="panel">
+          <h2>⚙ optillm Quick Test</h2>
+          <div class="font-sm muted" style="margin-bottom:8px">Exercise a technique end-to-end (small prompt, blocks until done).</div>
+          <div class="flex gap-2 items-center flex-wrap">
+            <select id="optApproach" style="width:150px">
+              <option value="none">none (passthrough)</option>
+              <option value="moa">moa</option>
+              <option value="bon">bon</option>
+              <option value="cot_reflection">cot_reflection</option>
+              <option value="re2">re2</option>
+              <option value="web_search&cot_reflection">web_search + synthesis</option>
+              <option value="web_search">web_search (raw results)</option>
+              <option value="readurls">readurls</option>
+            </select>
+            <input type="text" id="optPrompt" value="What is 17*23?" style="flex:1">
+            <button class="muted" onclick="optillmTest()">▶ Test</button>
+          </div>
+          <pre id="optTestOut" style="max-height:220px;overflow:auto;font-size:10px;margin-top:8px;display:none;background:rgba(0,0,0,.4);padding:8px;border-radius:6px"></pre>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="panel">
+          <h2>LAN Config Snippets</h2>
+          <div id="lanSnippets" class="font-sm" style="color:var(--muted)">Loading…</div>
+        </div>
+        <div class="panel">
+          <h2>Network Clients</h2>
+          <div id="networkClients" class="font-sm" style="color:var(--muted)">Loading…</div>
+        </div>
+      </div>
+
+    </div><!-- /services -->
+
+    <!-- ████  MODELS  ████ -->
+    <div class="tab-content" id="tab-models">
+
+      <div class="panel mb-4">
+        <div class="flex justify-between items-center mb-4">
+          <h2>Local Models</h2>
+          <button onclick="loadModels()" class="muted" style="font-size:11px;padding:3px 8px">↻ Refresh</button>
+        </div>
+        <table class="data" id="modelsTable">
+          <thead>
+            <tr><th>Name</th><th>Engine</th><th>Size</th><th>Arch</th><th>Quant</th><th>Actions</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="font-sm muted mt-2">llama.cpp models start on port 8097 with the Runtime tab settings; MLX models start on port 8098 through the KV-quantizing MLX server. “Use” switches engine automatically.</div>
+      </div>
+
+      <div class="panel mb-4">
+        <h2>Download from HuggingFace</h2>
+        <div class="form-row mb-2">
+          <label>Search or direct repo</label>
+          <input type="text" id="hfSearch" placeholder="e.g. unsloth/Qwen3.6-35B" style="flex:1">
+          <button onclick="searchHF()">Search</button>
+          <button onclick="hfDirectDownload()" class="muted">Browse Direct</button>
+        </div>
+        <div id="hfResults" class="mt-4"></div>
+      </div>
+
+      <div class="panel mb-4">
+        <div class="flex justify-between items-center mb-4">
+          <h2>Download Tasks <span id="taskCount" class="pill muted" style="font-size:11px;margin-left:6px">0</span></h2>
+          <button onclick="loadTasks()" class="muted" style="font-size:11px;padding:3px 8px">↻ Refresh</button>
+        </div>
+        <div id="tasksList" style="color:var(--muted);font-size:12px">No tasks yet.</div>
+      </div>
+
+      <div class="panel">
+        <h2>HF CLI Status</h2>
+        <div id="hfCliStatus" class="font-mono font-sm" style="color:var(--muted)">Loading…</div>
+      </div>
+
+    </div><!-- /models -->
+
+    <!-- ████  RUNTIME  ████ -->
+    <div class="tab-content" id="tab-runtime">
+
+      <div class="panel mb-4">
+        <div class="flex justify-between items-center flex-wrap gap-2">
+          <h2 style="margin:0">Active Engine: <span id="engineBadge" class="pill muted">—</span></h2>
+          <div id="engineDetail" class="font-sm muted"></div>
+        </div>
+      </div>
+
+      <div class="grid-2 mb-4">
+        <div class="panel">
+          <h2>Runtime Configuration <span class="pill cyan" style="font-size:10px">llama.cpp</span> <span id="llamaActivePill"></span></h2>
+          <div class="form-row">
+            <label>Model</label>
+            <select id="cfg-model" style="flex:1" onchange="onModelChange()"></select>
+            <button class="success" onclick="applyModelProfile()" title="Apply the measured-safe Apple Silicon configuration">⚡ Optimal</button>
+          </div>
+          <div class="form-row">
+            <label>Context</label>
+            <input type="number" id="cfg-ctx" min="4096" max="1000000" style="width:140px" oninput="updateCommandPreview();updateVramEstimate()">
+          </div>
+          <div class="form-row">
+            <label>KV Cache K</label>
+            <select id="cfg-kv-k" style="flex:1" onchange="updateCommandPreview();updateVramEstimate()"></select>
+          </div>
+          <div class="form-row">
+            <label>KV Cache V</label>
+            <select id="cfg-kv-v" style="flex:1" onchange="updateCommandPreview();updateVramEstimate()"></select>
+          </div>
+          <div class="form-row">
+            <label>Batch Size</label>
+            <input type="number" id="cfg-batch" style="width:140px" oninput="updateCommandPreview()">
+          </div>
+          <div class="form-row">
+            <label>uBatch Size</label>
+            <input type="number" id="cfg-ubatch" placeholder="512" style="width:140px" oninput="updateCommandPreview();updateVramEstimate()">
+          </div>
+          <div class="form-row">
+            <label title="Optional multimodal projector. Leave empty for text-only; set to the matching mmproj GGUF for vision/OCR.">mmproj</label>
+            <input type="text" id="cfg-mmproj" placeholder="/path/to/mmproj.gguf" style="flex:1" oninput="updateCommandPreview()">
+          </div>
+          <div class="form-row">
+            <label title="Qwen-VL grounding/OCR quality hint. llama.cpp recommends at least 1024 image tokens.">Image Min Tokens</label>
+            <input type="number" id="cfg-image-min-tokens" placeholder="1024" style="width:140px" oninput="updateCommandPreview()">
+          </div>
+          <div class="form-row">
+            <label title="Cap dynamic-resolution vision tokens so full-page images do not allocate unbounded Metal workspace.">Image Max Tokens</label>
+            <input type="number" id="cfg-image-max-tokens" placeholder="1024" style="width:140px" oninput="updateCommandPreview()">
+          </div>
+          <div class="form-row">
+            <label>Checkpoints</label>
+            <select id="cfg-ckpt" style="width:160px" onchange="updateCommandPreview()">
+              <option value="0">Disabled</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="4">4</option>
+              <option value="8">8</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label title="--checkpoint-min-step: minimum token spacing between recurrent-state checkpoints. SMALL (256) = each turn restores from a near checkpoint → fast incremental prompts on the hybrid model. The old 32768 caused up to 38k-token re-reads per turn.">Ckpt Min Step</label>
+            <input type="number" id="cfg-ckpt-every" placeholder="256" style="width:140px" oninput="updateCommandPreview()">
+          </div>
+          <div class="form-row">
+            <label title="llama.cpp --cache-ram: host/unified-memory budget for reusable prompt states. 512 MiB is the safe default on this 32 GiB M1 Max.">Prompt Cache RAM</label>
+            <input type="number" id="cfg-cache-ram" placeholder="512" min="0" step="128" style="width:140px" oninput="updateCommandPreview()">
+          </div>
+          <div class="form-row">
+            <label title="Legacy A5000 setting retained only for importing old profiles; ignored on Metal.">Graph Cap (legacy)</label>
+            <input type="number" id="cfg-graph-cap" placeholder="—" style="width:140px;opacity:.5" oninput="updateCommandPreview()">
+          </div>
+          <div class="form-row">
+            <label>Rope Scale</label>
+            <input type="text" id="cfg-rope-scale" placeholder="1.0" style="width:140px" oninput="updateCommandPreview()">
+          </div>
+          <div class="form-row">
+            <label>YaRN Orig Ctx</label>
+            <input type="number" id="cfg-yarn-ctx" placeholder="262144" style="width:140px" oninput="updateCommandPreview()">
+          </div>
+          <div class="flex gap-2 mt-4 flex-wrap">
+            <button class="success" onclick="saveConfig(false)">Save</button>
+            <button class="warn"    onclick="saveConfig(true)">Save &amp; Restart</button>
+            <button class="muted"   onclick="loadConfig()">Reset</button>
+          </div>
+        </div>
+
+        <div>
+          <div class="panel mb-4">
+            <h2>MLX Engine <span class="pill purple" style="font-size:10px">MLX</span> <span id="mlxActivePill"></span></h2>
+            <div class="form-row">
+              <label>MLX Model</label>
+              <select id="mlx-model" style="flex:1" onchange="updateMlxPreview()"></select>
+            </div>
+            <div class="form-row">
+              <label title="Native modes use MLX affine KV. Turbo modes rotate full-attention keys; recurrent Qwen caches remain untouched. Turbo3 uses fused 3-bit PolarQuant Metal kernels.">KV Cache Mode</label>
+              <select id="mlx-kv-mode" style="width:280px" onchange="updateMlxPreview()">
+                <option value="native8">Native 8-bit (recommended — keeps K quality)</option>
+                <option value="native4">Native 4-bit (small; K-cache quality loss)</option>
+                <option value="turbo4">Turbo4 rotated KV (experimental)</option>
+                <option value="turbo3">Turbo3 fused PolarQuant (experimental)</option>
+              </select>
+            </div>
+            <div class="form-row">
+              <label title="Larger groups reduce KV scale/bias metadata. Group 64 is quality-first; Turbo4 group 128 is a smaller experimental option that must pass a needle test before regular use.">KV Group Size</label>
+              <select id="mlx-kv-group-size" style="width:280px" onchange="updateMlxPreview()">
+                <option value="64">64 (quality-first default)</option>
+                <option value="128">128 (smaller, experimental)</option>
+                <option value="32">32 (larger, maximum granularity)</option>
+              </select>
+            </div>
+            <div class="form-row">
+              <label title="Larger chunks can improve cold-prefill speed but increase peak Metal workspace. Use 2048 for safe long-context tests; benchmark 4096 for shorter prompts.">Prefill Step</label>
+              <select id="mlx-prefill-step" style="width:200px" onchange="updateMlxPreview()">
+                <option value="128">128 (extreme depth)</option>
+                <option value="256">256 (very low peak RAM)</option>
+                <option value="512">512 (low peak RAM)</option>
+                <option value="1024">1024 (lower peak RAM)</option>
+                <option value="2048">2048 (safe default)</option>
+                <option value="4096">4096 (benchmark for speed)</option>
+              </select>
+            </div>
+            <div class="form-row">
+              <label title="Automatically caps the selected chunk at 512 above 64K, 256 above 100K, and 128 above 220K. This prevents deep-context attention workspace from exhausting unified memory.">Adaptive Prefill</label>
+              <label class="font-sm" style="display:flex;align-items:center;gap:6px">
+                <input type="checkbox" id="mlx-adaptive-prefill" checked onchange="updateMlxPreview()">
+                shrink chunks as retained context grows (recommended)
+              </label>
+            </div>
+            <div class="form-row">
+              <label title="Permit a context above the measured stability planner only while the lid is closed and the Metal ceiling is 30,720 MiB. This remains an experimental pressure test, not a promise that a full-depth request will fit.">Extreme Headless Context</label>
+              <label class="font-sm" style="display:flex;align-items:center;gap:6px">
+                <input type="checkbox" id="mlx-experimental-context" onchange="updateMlxPreview()">
+                allow over-budget context with strict headless safeguards
+              </label>
+            </div>
+            <div class="form-row">
+              <label title="Reserve the complete quantized KV arena while loading, like llama.cpp. Fixed mode uses one request slot and disables copied prompt-cache states.">Fixed KV Context</label>
+              <select id="mlx-preallocate-kv-size" style="width:300px" onchange="updateMlxPreview()">
+                <option value="0">Dynamic growth (upstream MLX)</option>
+                <option value="65536">64K reserved</option>
+                <option value="131072">128K reserved</option>
+                <option value="196608">192K reserved</option>
+                <option value="262144">256K reserved (few-attention-layer models only)</option>
+              </select>
+            </div>
+            <div class="form-row">
+              <label title="Keep the single KV arena across turns and reuse the shared token prefix (llama.cpp-style checkpoints) so follow-up prompts skip re-prefilling unchanged history. Essential for coding-agent latency.">Session Reuse</label>
+              <label class="font-sm" style="display:flex;align-items:center;gap:6px">
+                <input type="checkbox" id="mlx-session-reuse" checked onchange="updateMlxPreview()">
+                reuse shared prefix across turns (recommended)
+              </label>
+            </div>
+            <div class="form-row">
+              <label title="Only used in dynamic mode. Fixed mode disables retained copies so its single preallocated arena cannot be duplicated.">Dynamic Prompt Cache MiB</label>
+              <input type="number" id="mlx-prompt-cache-mib" value="2048" min="256" max="4096" step="256" style="width:200px" oninput="updateMlxPreview()">
+            </div>
+            <div class="flex gap-2 mt-2 flex-wrap">
+              <button class="success" onclick="applyMlx(false)">Save MLX Config</button>
+              <button class="warn" onclick="applyMlx(true)">Save &amp; Start MLX</button>
+            </div>
+            <div id="mlxMemoryPlan" class="font-sm muted mt-2">
+              Select a downloaded model and fixed context to calculate the memory safety plan.
+            </div>
+            <pre id="mlxCmdPreview" style="font-size:10px;background:rgba(0,0,0,.4);padding:12px;border-radius:6px;white-space:pre-wrap;word-break:break-all;max-height:140px;overflow:auto;color:var(--purple);margin-top:10px">— no MLX model selected —</pre>
+            <div class="font-sm muted mt-2">Fixed mode reserves full-attention KV at model load, uses one request slot, and rejects prompts exceeding the configured prompt+output capacity. Qwen recurrent state remains dynamic and small. Starting MLX stops llama.cpp — one model at a time.</div>
+          </div>
+          <div class="panel mb-4">
+            <h2>Vision / OCR Mode</h2>
+            <div id="visionModeStatus" class="font-sm muted mb-2">Loading…</div>
+            <div class="flex gap-2 flex-wrap">
+              <button class="success" onclick="setVisionMode(true, true)">Enable Vision/OCR</button>
+              <button class="warn" onclick="setVisionMode(false, true)">Disable Vision / Text Max Context</button>
+            </div>
+            <div class="font-sm muted mt-2">
+              Vision/OCR uses the matching mmproj, ctx 200k, batch 512, ubatch 128, image tokens 1024.
+              Text mode removes mmproj and restores ctx 395k, batch 2048, ubatch 512.
+            </div>
+          </div>
+          <!-- VRAM estimate -->
+          <div class="panel mb-4">
+            <h2>Live VRAM Estimate</h2>
+            <div id="vramEstimate" class="font-sm" style="color:var(--muted)">Select model to estimate.</div>
+          </div>
+          <!-- Command preview -->
+          <div class="panel mb-4">
+            <h2>Command Preview</h2>
+            <pre id="cmdPreview" style="font-size:10px;background:rgba(0,0,0,.4);padding:12px;border-radius:6px;white-space:pre-wrap;word-break:break-all;max-height:220px;overflow:auto;color:var(--accent)">— load config to preview —</pre>
+          </div>
+          <!-- Quick templates -->
+          <div class="panel">
+            <h2>Best-Performance Presets</h2>
+            <div class="flex gap-2 flex-wrap">
+              <button onclick="applyNamedProfile('35b')" class="success">⚡ 35B-A3B MoE</button>
+              <button onclick="applyNamedProfile('27b')" class="success">⚡ 27B Dense</button>
+            </div>
+            <div class="font-sm muted mt-2" id="presetNote">Benchmark-tuned (resync build 9502). Pick a model above (auto-applies) or click a preset, then Save &amp; Restart.</div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /runtime -->
+
+    <!-- ████  CHAT  ████ -->
+    <div class="tab-content" id="tab-chat">
+      <div class="panel chat-panel">
+        <div class="flex justify-between items-center mb-2 flex-wrap gap-2">
+          <h2>Chat Playground</h2>
+          <div class="flex gap-2 items-center flex-wrap font-sm" style="color:var(--muted)">
+            <label>temp <input type="number" id="chatTemp" value="0.7" min="0" max="2" step="0.1" style="width:60px"></label>
+            <label>max tokens <input type="number" id="chatMaxTok" value="1024" min="16" max="16384" step="64" style="width:80px"></label>
+            <span id="chatStats" class="font-mono"></span>
+            <button class="muted" onclick="chatClear()">✕ Clear</button>
+          </div>
+        </div>
+        <input type="text" id="chatSystem" placeholder="Optional system prompt…" class="w-full mb-2">
+        <div id="chatMessages" class="chat-messages"></div>
+        <div class="flex gap-2 mt-2 items-end">
+          <textarea id="chatInput" class="chat-input" rows="2"
+            placeholder="Message the running model… (Enter to send, Shift+Enter for newline)"></textarea>
+          <button class="success" id="chatSend" onclick="chatSend()">Send ▶</button>
+          <button class="danger" id="chatStop" onclick="chatStop()" style="display:none">◼ Stop</button>
+        </div>
+        <div class="font-sm muted mt-2">Requests go through the manager's local proxy to the active llama.cpp/MLX runtime. The conversation lives only in this browser tab.</div>
+      </div>
+    </div><!-- /chat -->
+
+    <!-- ████  BENCHMARK  ████ -->
+    <div class="tab-content" id="tab-benchmark">
+
+      <div class="grid-2 mb-4">
+        <div class="panel">
+          <h2>Quick Benchmark</h2>
+          <button class="success w-full mb-4" onclick="runQuickBench()">▶ Run 50 Token Test</button>
+          <div id="quickBenchResults"></div>
+        </div>
+        <div class="panel">
+          <h2>Context Sweep</h2>
+          <div class="form-row">
+            <label>Contexts</label>
+            <input type="text" id="sweepCtx" value="131072,196608,262144" style="flex:1" title="Comma-separated context sizes; each is benchmarked in turn">
+          </div>
+          <button class="warn w-full mb-4" onclick="runSweep()">▶ Run Sweep</button>
+          <div id="sweepProgress" style="display:none;margin-bottom:8px">
+            <div class="progress"><div id="sweepBar" class="progress-bar" style="width:0%"></div></div>
+            <div id="sweepStep" class="font-sm muted" style="margin-top:4px"></div>
+          </div>
+          <div id="sweepResults"></div>
+        </div>
+      </div>
+
+      <div class="panel mb-4">
+        <h2>MLX Long-Context Needle Test</h2>
+        <div class="form-row">
+          <label>Target tokens</label>
+          <input type="number" id="mlxNeedleTokens" value="32768" min="1024" max="262144" step="1024" style="width:140px">
+          <button class="warn" onclick="runMlxNeedle()">▶ Run Persistent Probe</button>
+        </div>
+        <div class="font-sm muted mb-2">Start at 32K, then prove 64K, 96K and higher. The caffeinated task keeps running and saves its JSON result under benchmark-results.</div>
+        <div id="mlxNeedleResults"></div>
+      </div>
+
+      <div class="grid-3 mb-4">
+        <div class="panel">
+          <h2>Gen Speed Test</h2>
+          <div class="form-row">
+            <label>Tokens</label>
+            <input type="number" id="genTokens" value="256" style="width:100px">
+          </div>
+          <button class="muted w-full mb-2" onclick="testGen()">▶ Run</button>
+          <div id="genResult"></div>
+        </div>
+        <div class="panel">
+          <h2>Prompt Speed Test</h2>
+          <div class="form-row">
+            <label>Prompt Tokens</label>
+            <input type="number" id="promptTokens" value="3000" style="width:100px">
+          </div>
+          <button class="muted w-full mb-2" onclick="testPrompt()">▶ Run</button>
+          <div id="promptResult"></div>
+        </div>
+        <div class="panel">
+          <h2>Codebase Test</h2>
+          <div class="form-row">
+            <label>Token Budget</label>
+            <input type="number" id="cbTokens" value="38000" style="width:100px">
+          </div>
+          <div class="form-row">
+            <label>Gen Tokens</label>
+            <input type="number" id="cbGen" value="200" style="width:100px">
+          </div>
+          <button class="muted w-full mb-2" onclick="testCodebase()">▶ Run</button>
+          <div id="cbResult"></div>
+        </div>
+      </div>
+
+      <div class="grid-2 mb-4">
+        <div class="panel">
+          <h2>Token Counter</h2>
+          <textarea id="tokenCountText" style="width:100%;height:100px;resize:vertical" placeholder="Paste text here to count tokens…"></textarea>
+          <button onclick="countTokens()" class="muted mt-2">Count Tokens</button>
+          <div id="tokenCountResult" class="mt-2 font-sm"></div>
+        </div>
+        <div class="panel">
+          <h2>VRAM Calculator</h2>
+          <div class="form-row">
+            <label>Model</label>
+            <select id="calcModel" style="flex:1"></select>
+          </div>
+          <div class="form-row">
+            <label>Context</label>
+            <input type="number" id="calcCtx" value="131072" style="width:140px">
+          </div>
+          <div class="form-row">
+            <label>KV Type</label>
+            <select id="calcKv" style="width:160px">
+              <option value="turbo4">turbo4</option>
+              <option value="turbo3">turbo3 (recommended)</option>
+              <option value="turbo2">turbo2</option>
+              <option value="q4_0">q4_0</option>
+              <option value="f16">f16</option>
+            </select>
+          </div>
+          <button onclick="calcVRAM()">Calculate</button>
+          <div id="calcResult" class="mt-4"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="flex justify-between items-center mb-4">
+          <h2>Recent Results</h2>
+          <div class="btn-group" style="font-size:11px">
+            <button onclick="compareSelected()" class="muted" style="font-size:11px;padding:3px 8px" title="Tick up to 2 rows, then compare">⇆ Compare ticked</button>
+            <button onclick="loadRecentResults()" class="muted" style="font-size:11px;padding:3px 8px">↻ Refresh</button>
+          </div>
+        </div>
+        <canvas id="sweepChart" style="width:100%;height:200px;display:none;border-radius:4px;background:rgba(0,0,0,.25);margin-bottom:12px"></canvas>
+        <div id="recentResults" class="font-sm" style="color:var(--muted)">No results yet.</div>
+      </div>
+
+    </div><!-- /benchmark -->
+
+    <!-- ████  POWER  ████ -->
+    <div class="tab-content" id="tab-power">
+
+      <div class="grid-2 mb-4">
+        <div class="panel">
+          <div class="flex justify-between items-center mb-2">
+            <h2>GPU Power</h2>
+            <button onclick="resetEnergy()" class="muted" style="font-size:11px;padding:3px 8px">↺ Reset Energy</button>
+          </div>
+          <div class="grid-2 gap-2 mb-3">
+            <div class="stat-card">
+              <div class="label">GPU Power</div>
+              <div class="value text-red" id="gpuPower">—</div>
+              <div class="unit">Watts</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">GPU Energy</div>
+              <div class="value text-yellow" id="totalEnergy">—</div>
+              <div class="unit">Wh</div>
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--muted);background:rgba(0,0,0,.2);padding:8px 10px;border-radius:6px;line-height:1.5">
+            Power, temperature, and fan readings come from the supervised
+            <strong>mactop</strong> sampler (IOReport + SMC). Apple manages SoC
+            power dynamically — there is no per-GPU power limit on M-series.
+          </div>
+        </div>
+        <div class="panel">
+          <h2>GPU Details</h2>
+          <div id="gpuDetails" class="font-mono font-sm" style="color:var(--muted)">Loading…</div>
+        </div>
+      </div>
+
+      <!-- GPU Power history chart -->
+      <div class="panel mb-4">
+        <div class="flex justify-between items-center mb-2">
+          <h2>GPU Power History</h2>
+          <div class="flex gap-1" id="powerWindowBtns">
+            <button class="window-btn pill cyan" data-window="15m" style="font-size:11px;padding:2px 8px;cursor:pointer">15m</button>
+            <button class="window-btn pill muted" data-window="1h"  style="font-size:11px;padding:2px 8px;cursor:pointer">1h</button>
+            <button class="window-btn pill muted" data-window="6h"  style="font-size:11px;padding:2px 8px;cursor:pointer">6h</button>
+            <button class="window-btn pill muted" data-window="24h" style="font-size:11px;padding:2px 8px;cursor:pointer">24h</button>
+          </div>
+        </div>
+        <canvas id="powerChart" style="width:100%;height:120px;display:block;border-radius:4px;background:rgba(0,0,0,.25)"></canvas>
+        <div id="powerChartStats" class="font-sm" style="color:var(--muted);margin-top:4px"></div>
+      </div>
+
+      <div class="grid-3 mb-4">
+        <div class="panel">
+          <h2>GPU Processes</h2>
+          <div id="gpuProcs" class="font-sm" style="color:var(--muted)">Loading…</div>
+        </div>
+        <div class="panel">
+          <h2>System Info</h2>
+          <div id="sysInfo" class="font-sm" style="color:var(--muted)">
+            <div class="skeleton skeleton-line"></div>
+            <div class="skeleton skeleton-line"></div>
+            <div class="skeleton skeleton-line"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="flex justify-between items-center mb-2">
+            <h2>Telemetry</h2>
+            <button onclick="restartTelemetry()" class="muted" style="font-size:11px;padding:3px 8px">↻ Restart sampler</button>
+          </div>
+          <div id="telemetryHealth" class="font-sm" style="color:var(--muted)">
+            <div class="skeleton skeleton-line"></div>
+            <div class="skeleton skeleton-line"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Apple Metal wired-memory control -->
+      <div class="panel">
+        <h2>LLM Mode — Metal Memory Ceiling</h2>
+        <p class="font-sm" style="color:var(--muted);margin-bottom:10px">
+          Runtime-only control of how much unified memory Metal may wire. It resets on reboot, so macOS always starts normally.
+          Stop the model first, or select restart to apply the new ceiling to the running server.
+        </p>
+        <div class="flex gap-2 items-center mb-3 flex-wrap">
+          <label class="font-sm" style="color:var(--muted)">Ceiling (MiB)</label>
+          <input type="number" id="powerLimitInput" min="20480" max="30720" step="256" style="width:110px">
+          <input type="range" id="powerLimitSlider" min="20480" max="30720" step="256" style="flex:1;min-width:160px">
+          <button onclick="setPowerLimit()" class="primary" id="powerLimitApply">Apply</button>
+          <button onclick="setPowerLimit('restart')" class="warn">Apply &amp; Restart Model</button>
+          <button onclick="stopModelKeepServerMode()" class="muted">Stop Model, Keep SSH Awake</button>
+        </div>
+        <div class="flex gap-1 mb-3 flex-wrap">
+          <button onclick="applyMemoryPreset(27648)" class="muted">27 GiB safe</button>
+          <button onclick="applyMemoryPreset(28672)" class="muted">28 GiB</button>
+          <button onclick="applyMemoryPreset(29696)" class="warn">29 GiB tested</button>
+          <button onclick="applyMemoryPreset(30720)" class="danger">30 GiB extreme</button>
+        </div>
+        <div id="powerLimitInfo" class="font-sm" style="color:var(--muted)">Loading…</div>
+        <div id="powerLimitResult" class="font-sm mt-2"></div>
+      </div>
+
+      <!-- macOS server-mode state -->
+      <div class="panel">
+        <h2>macOS Server Mode</h2>
+        <p class="font-sm muted mb-3">The server-mode sleep guard stays active even when llama.cpp is stopped. The display remains free to sleep.</p>
+        <div class="flex gap-2 items-center mb-3 flex-wrap">
+          <button onclick="_loadPowerStatus()" class="muted">↻ Refresh</button>
+          <button onclick="stopModelKeepServerMode()" class="muted">Stop Model, Keep SSH</button>
+          <button
+            onclick="leaveLlmMode()"
+            class="normal-mode"
+            data-normal-macos-button
+          > Normal macOS — Release GPU</button>
+        </div>
+        <div id="powerStatusRow" class="font-sm mt-2" style="color:var(--muted)"></div>
+      </div>
+
+    </div><!-- /power -->
+
+    <!-- ████  MONITOR  ████ -->
+    <div class="tab-content" id="tab-monitor">
+
+      <!-- Header row: window selector + sampling rate + last update -->
+      <div class="panel mb-4">
+        <div class="flex justify-between items-center flex-wrap gap-2">
+          <div class="flex gap-1" id="monitorWindowBtns">
+            <button class="window-btn pill cyan"  data-window="15m" style="font-size:11px;padding:3px 10px;cursor:pointer">15m</button>
+            <button class="window-btn pill muted" data-window="1h"  style="font-size:11px;padding:3px 10px;cursor:pointer">1h</button>
+            <button class="window-btn pill muted" data-window="6h"  style="font-size:11px;padding:3px 10px;cursor:pointer">6h</button>
+            <button class="window-btn pill muted" data-window="24h" style="font-size:11px;padding:3px 10px;cursor:pointer">24h</button>
+            <button class="window-btn pill muted" data-window="7d"  style="font-size:11px;padding:3px 10px;cursor:pointer">7d</button>
+            <button class="window-btn pill muted" data-window="30d" style="font-size:11px;padding:3px 10px;cursor:pointer">30d</button>
+          </div>
+          <div class="flex gap-2 items-center flex-wrap font-sm" style="color:var(--muted)">
+            <label>Sample rate</label>
+            <select id="monitorSampleRate" style="font-size:12px;padding:2px 6px;background:rgba(0,0,0,.3);color:var(--text);border:1px solid var(--border);border-radius:4px">
+              <option value="1">1s</option>
+              <option value="2">2s</option>
+              <option value="5" selected>5s</option>
+              <option value="10">10s</option>
+              <option value="15">15s</option>
+              <option value="30">30s</option>
+            </select>
+            <span id="monitorLastUpdate" class="font-mono"></span>
+            <button onclick="monitorRefreshNow()" class="muted" style="font-size:11px;padding:3px 10px">↻ Refresh</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Row 1: live tiles -->
+      <div class="grid-4 mb-4" id="monitorTiles">
+        <div class="stat-card">
+          <div class="label">GPU Util</div>
+          <div class="value text-accent" id="monGpuUtil">—</div>
+          <div class="unit">%</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">VRAM</div>
+          <div class="value text-purple" id="monVram">—</div>
+          <div class="unit" id="monVramUnit">GiB</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">GPU Power</div>
+          <div class="value text-yellow" id="monPower">—</div>
+          <div class="unit">Watts</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">GPU Temp</div>
+          <div class="value text-red" id="monTemp">—</div>
+          <div class="unit">°C</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Eval speed</div>
+          <div class="value text-green" id="monEvalTokS">—</div>
+          <div class="unit">tok/s</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Prefill</div>
+          <div class="value text-cyan" id="monPromptTokS">—</div>
+          <div class="unit">tok/s</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">CPU</div>
+          <div class="value" id="monCpu">—</div>
+          <div class="unit">%</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">RAM</div>
+          <div class="value" id="monRam">—</div>
+          <div class="unit" id="monRamUnit">GiB</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">System Free</div>
+          <div class="value text-cyan" id="monSystemFree">—</div>
+          <div class="unit">GiB unused pages</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Unified Available</div>
+          <div class="value text-green" id="monUnifiedAvailable">—</div>
+          <div class="unit">GiB reclaimable</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">GPU Pool Free</div>
+          <div class="value text-purple" id="monGpuPoolFree">—</div>
+          <div class="unit">GiB shared-pool view</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Metal Headroom</div>
+          <div class="value text-yellow" id="monMetalHeadroom">—</div>
+          <div class="unit">GiB below ceiling</div>
+        </div>
+      </div>
+
+      <!-- Row 2: 2x2 chart grid -->
+      <div class="grid-2 mb-4">
+        <div class="panel">
+          <h2>GPU Utilization &amp; Power</h2>
+          <canvas id="chartGpu" style="width:100%;height:160px;display:block;border-radius:4px;background:rgba(0,0,0,.25)"></canvas>
+          <div class="flex gap-4 font-sm" style="margin-top:6px">
+            <span style="color:#22d3ee">■ GPU Util %</span>
+            <span style="color:#facc15">■ Power W</span>
+          </div>
+        </div>
+        <div class="panel">
+          <h2>VRAM &amp; Memory Bandwidth</h2>
+          <canvas id="chartVram" style="width:100%;height:160px;display:block;border-radius:4px;background:rgba(0,0,0,.25)"></canvas>
+          <div class="flex gap-4 font-sm" style="margin-top:6px">
+            <span style="color:#a855f7">■ VRAM MiB</span>
+            <span style="color:#34d399">■ Mem Util %</span>
+          </div>
+        </div>
+        <div class="panel">
+          <h2>CPU &amp; RAM</h2>
+          <canvas id="chartCpu" style="width:100%;height:160px;display:block;border-radius:4px;background:rgba(0,0,0,.25)"></canvas>
+          <div class="flex gap-4 font-sm" style="margin-top:6px">
+            <span style="color:#22d3ee">■ CPU %</span>
+            <span style="color:#a855f7">■ RAM MiB</span>
+          </div>
+        </div>
+        <div class="panel">
+          <h2>Inference Throughput</h2>
+          <canvas id="chartTokS" style="width:100%;height:160px;display:block;border-radius:4px;background:rgba(0,0,0,.25)"></canvas>
+          <div class="flex gap-4 font-sm" style="margin-top:6px">
+            <span style="color:#34d399">■ Eval tok/s</span>
+            <span style="color:#22d3ee">■ Prefill tok/s</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Free-memory views + measured default profile baselines -->
+      <div class="grid-2 mb-4">
+        <div class="panel">
+          <h2>Free Unified Memory &amp; Metal Headroom</h2>
+          <canvas id="chartFreeMemory" style="width:100%;height:180px;display:block;border-radius:4px;background:rgba(0,0,0,.25)"></canvas>
+          <div class="flex gap-4 font-sm flex-wrap" style="margin-top:6px">
+            <span style="color:#22d3ee">■ System free</span>
+            <span style="color:#34d399">■ Unified available</span>
+            <span style="color:#a855f7">■ GPU pool free</span>
+            <span style="color:#facc15">■ Metal headroom</span>
+          </div>
+          <p class="font-sm muted mt-2">These overlap because M1 Max has one shared 32 GiB pool; do not add the lines together.</p>
+        </div>
+        <div class="panel">
+          <h2>Measured Default Profile Headroom</h2>
+          <div id="profileMemoryBaselines" class="font-sm muted">Loading measured 35B and 27B defaults…</div>
+        </div>
+      </div>
+
+      <!-- Row 3: counters + service health -->
+      <div class="grid-2 mb-4">
+        <div class="panel">
+          <h2>Counters &amp; Health</h2>
+          <table class="data" id="monitorCountersTable" style="font-size:12px">
+            <tbody>
+              <tr><td>Total requests</td><td class="font-mono" id="ctrRequests">—</td></tr>
+              <tr><td>Manager errors</td><td class="font-mono" id="ctrErrors">—</td></tr>
+              <tr><td>Forced reprocess</td><td class="font-mono" id="ctrForced">—</td></tr>
+              <tr><td>Checkpoints created</td><td class="font-mono" id="ctrCkptCreated">—</td></tr>
+              <tr><td>Checkpoints restored</td><td class="font-mono" id="ctrCkptRestored">—</td></tr>
+              <tr><td>Adaptive prefill step</td><td class="font-mono" id="ctrPrefillStep">—</td></tr>
+              <tr><td>Current target depth</td><td class="font-mono" id="ctrTargetDepth">—</td></tr>
+              <tr><td>Speculative acceptance</td><td class="font-mono" id="ctrDraftAcceptance">—</td></tr>
+              <tr><td>Speculative tokens/cycle</td><td class="font-mono" id="ctrDraftTokensCycle">—</td></tr>
+              <tr><td>Manager session uptime</td><td class="font-mono" id="ctrUptime">—</td></tr>
+              <tr><td>Inference runtime uptime</td><td class="font-mono" id="ctrLlamaUptime">—</td></tr>
+              <tr><td>Inference runtime restarts</td><td class="font-mono" id="ctrLlamaRestarts">—</td></tr>
+              <tr><td>PCIe link</td><td class="font-mono" id="ctrPcie">—</td></tr>
+              <tr><td>GPU P-state</td><td class="font-mono" id="ctrPstate">—</td></tr>
+              <tr><td>GPU fan</td><td class="font-mono" id="ctrFan">—</td></tr>
+              <tr><td>Load avg (1/5/15)</td><td class="font-mono" id="ctrLoad">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="panel">
+          <div class="flex justify-between items-center mb-2">
+            <h2>Event Timeline</h2>
+            <div class="flex gap-1" id="monitorEventsWindowBtns">
+              <button class="window-btn pill cyan"  data-window="1h"  style="font-size:11px;padding:2px 8px;cursor:pointer">1h</button>
+              <button class="window-btn pill muted" data-window="6h"  style="font-size:11px;padding:2px 8px;cursor:pointer">6h</button>
+              <button class="window-btn pill muted" data-window="24h" style="font-size:11px;padding:2px 8px;cursor:pointer">24h</button>
+              <button class="window-btn pill muted" data-window="7d"  style="font-size:11px;padding:2px 8px;cursor:pointer">7d</button>
+            </div>
+          </div>
+          <div id="monitorEvents" class="font-mono font-sm" style="max-height:340px;overflow:auto;background:rgba(0,0,0,.2);padding:8px;border-radius:4px;color:var(--muted)">
+            Loading…
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /monitor -->
+
+    <!-- ████  LOGS  ████ -->
+    <div class="tab-content" id="tab-logs">
+      <div class="panel">
+        <h2>Service Logs</h2>
+        <div class="flex gap-2 mb-4 flex-wrap items-center">
+          <select id="logService" onchange="loadLogs()">
+            <option value="qwen">llama (qwen)</option>
+            <option value="manager">manager</option>
+          </select>
+          <select id="logFilter">
+            <option value="all">All</option>
+            <option value="checkpoint">Checkpoints</option>
+            <option value="error">Errors</option>
+            <option value="warning">Warnings</option>
+          </select>
+          <input type="number" id="logLines" value="100" style="width:80px">
+          <button onclick="loadLogs()">↻ Refresh</button>
+          <label style="font-size:12px">
+            <input type="checkbox" id="autoLogsChk" onchange="toggleAutoLogs(this.checked)"> Live follow
+          </label>
+        </div>
+        <pre id="logContent" style="max-height:600px;overflow:auto;font-size:11px"></pre>
+      </div>
+    </div><!-- /logs -->
+
+    <!-- ████  SETTINGS  ████ -->
+    <div class="tab-content" id="tab-settings">
+
+      <!-- Manager launchd status -->
+      <div class="panel mb-4">
+        <h2>Manager Service</h2>
+        <div id="systemdStatus" class="mb-4 font-sm" style="color:var(--muted)">Loading…</div>
+        <div class="flex gap-2 flex-wrap">
+          <button onclick="installSystemd()" class="success">Check launchd install</button>
+          <button onclick="uninstallSystemd()" class="danger">Disable (SSH only)</button>
+          <button onclick="checkSystemd()" class="muted">Check Status</button>
+        </div>
+      </div>
+
+      <!-- Profiles -->
+      <div class="panel mb-4">
+        <h2>Profiles</h2>
+        <div class="form-row mb-2">
+          <input type="text" id="profileName" placeholder="Profile name" style="flex:1">
+          <button onclick="saveProfile()">Save Current</button>
+        </div>
+        <div id="profilesList" class="font-sm" style="color:var(--muted)">Loading…</div>
+      </div>
+
+      <!-- Config export / import -->
+      <div class="panel mb-4">
+        <h2>Config Export / Import</h2>
+        <div class="flex gap-2 mb-2 flex-wrap">
+          <button onclick="exportConfig()">⬇ Export JSON</button>
+          <button onclick="importConfig()" class="muted">⬆ Import JSON</button>
+        </div>
+        <div id="configExportResult" class="font-sm" style="color:var(--muted)"></div>
+      </div>
+
+      <!-- Raw environment -->
+      <div class="panel mb-4">
+        <h2>Raw Environment</h2>
+        <div class="flex gap-2 mb-4">
+          <button class="muted" onclick="loadRawEnv()">↓ Load</button>
+          <button class="warn"  onclick="saveRawEnv()">↑ Save</button>
+        </div>
+        <textarea id="rawEnv" style="width:100%;height:380px;font-family:var(--font-mono);font-size:12px"></textarea>
+      </div>
+
+      <!-- HF token -->
+      <div class="panel mb-4">
+        <h2>HuggingFace Token</h2>
+        <div class="form-row">
+          <input type="password" id="hfTokenInput" placeholder="hf_…" style="flex:1">
+          <button onclick="setHfToken()">Save Token</button>
+        </div>
+      </div>
+
+      <!-- Build status -->
+      <div class="panel mb-4">
+        <h2>Build Status</h2>
+        <div id="buildTable" class="font-sm mb-2" style="color:var(--muted)">Loading…</div>
+        <button onclick="pullAndRebuild()" class="warn">Pull &amp; Rebuild (10–15 min)</button>
+        <pre id="rebuildLog" style="max-height:200px;overflow:auto;font-size:11px;margin-top:8px"></pre>
+      </div>
+
+      <!-- Cache management -->
+      <div class="panel mb-4">
+        <h2>Cache Management</h2>
+        <div class="flex gap-2 flex-wrap">
+          <button class="muted"  onclick="clearCache('run')">Clear .run/</button>
+          <button class="muted"  onclick="clearCache('logs')">Clear logs</button>
+          <button class="warn"   onclick="clearCache('os')">Drop OS Cache</button>
+          <button class="danger" onclick="clearCache('all')">Nuke All</button>
+        </div>
+      </div>
+
+      <!-- Disk usage -->
+      <div class="panel mb-4">
+        <h2>Disk Usage</h2>
+        <div id="diskUsage" class="font-sm" style="color:var(--muted)">Loading…</div>
+      </div>
+
+      <!-- Metrics export -->
+      <div class="panel mb-4">
+        <h2>Metrics Export</h2>
+        <button onclick="exportMetrics()" class="muted">⬇ Export GPU Metrics JSON</button>
+        <div id="metricsExportResult" class="mt-2 font-sm" style="color:var(--muted)"></div>
+      </div>
+
+      <!-- Auth / security -->
+      <div class="panel">
+        <h2>Auth &amp; Security</h2>
+        <div id="authStatus" class="font-sm" style="color:var(--muted)">Loading…</div>
+      </div>
+
+    </div><!-- /settings -->
+
+  </main>
+</div><!-- /#app -->
+
+<!-- Toast container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- Modal -->
+<div id="modal" class="modal" style="display:none" onclick="if(event.target===this)closeModal()">
+  <div></div>
+</div>
+
+<script src="/static/components.js"></script>
+<script src="/static/charts.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

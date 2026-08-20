@@ -1,0 +1,807 @@
+[settings]
+log_dir = "logs"
+runtime_dir = "run"
+startup_timeout_seconds = 600
+shutdown_timeout_seconds = 20
+minimum_available_gib = 6.0
+
+# The exact HauhauCS aggressive model is GGUF-only. This is the conservative
+# first profile for a 32 GiB M1 Max running the normal macOS GUI.
+[profiles.llama-turbo4-safe]
+engine = "llama.cpp"
+description = "DEFAULT: HauhauCS 35B Q4_K_P, native 262K, q8 K + Turbo4 V (46.3 short / 31.2 at 8K tok/s)"
+port = 8097
+health_path = "/health"
+command = [
+  "{LLAMA_BIN}",
+  "-m", "{GGUF_MODEL}",
+  "--host", "0.0.0.0", "--port", "8097",
+  "--gpu-layers", "all", "--fit", "off", "--no-host",
+  "--threads", "10", "--threads-batch", "10",
+  "--ctx-size", "262144", "--parallel", "1",
+  "--batch-size", "2048", "--ubatch-size", "1024",
+  "--flash-attn", "on",
+  "--cache-type-k", "q8_0", "--cache-type-v", "turbo4",
+  "--ctx-checkpoints", "2", "--checkpoint-min-step", "256",
+  "--cache-ram", "1536", "--no-cont-batching",
+  "--jinja", "--reasoning", "off", "--reasoning-format", "none",
+  "--no-warmup", "--metrics"
+]
+
+[profiles.llama-turbo4-max]
+engine = "llama.cpp"
+description = "HauhauCS 35B Q4_K_P, native 262K context, maximum symmetric Turbo4 compression"
+port = 8097
+health_path = "/health"
+command = [
+  "/usr/bin/env", "TURBO_AUTO_ASYMMETRIC=0", "{LLAMA_BIN}",
+  "-m", "{GGUF_MODEL}",
+  "--host", "0.0.0.0", "--port", "8097",
+  "--gpu-layers", "all", "--fit", "off", "--no-host",
+  "--threads", "4", "--threads-batch", "8",
+  "--ctx-size", "262144", "--parallel", "1",
+  "--batch-size", "2048", "--ubatch-size", "512",
+  "--flash-attn", "on",
+  "--cache-type-k", "turbo4", "--cache-type-v", "turbo4",
+  "--ctx-checkpoints", "2", "--checkpoint-min-step", "256",
+  "--cache-ram", "0", "--no-cont-batching",
+  "--jinja", "--reasoning", "off", "--reasoning-format", "none",
+  "--no-warmup", "--metrics"
+]
+
+[profiles.llama-35b-q4kp-extended-524k]
+engine = "llama.cpp"
+description = "EXTENDED: 35B Q4_K_P, 524K, quality-preserving q8 K + Turbo2 V + YaRN (45.20 tok/s)"
+port = 8097
+health_path = "/health"
+command = [
+  "{LLAMA_BIN}",
+  "-m", "{GGUF_MODEL}",
+  "--host", "0.0.0.0", "--port", "8097",
+  "--gpu-layers", "all", "--fit", "off", "--no-host",
+  "--threads", "4", "--threads-batch", "8",
+  "--ctx-size", "524288", "--parallel", "1",
+  "--batch-size", "2048", "--ubatch-size", "512",
+  "--flash-attn", "on",
+  "--cache-type-k", "q8_0", "--cache-type-v", "turbo2",
+  "--ctx-checkpoints", "2", "--checkpoint-min-step", "256",
+  "--cache-ram", "0", "--no-cont-batching",
+  "--rope-scaling", "yarn", "--rope-scale", "2.0",
+  "--yarn-orig-ctx", "262144", "--rope-freq-base", "10000000",
+  "--override-kv", "qwen35moe.context_length=int:524288",
+  "--jinja", "--reasoning", "off", "--reasoning-format", "none",
+  "--no-warmup", "--metrics"
+]
+
+[profiles.llama-35b-q4kp-frontier-1m]
+engine = "llama.cpp"
+description = "FRONTIER/EXPERIMENTAL: 35B Q4_K_P, 1M, Turbo2 K/V + 4x YaRN (43.58 tok/s; allocation-tested)"
+port = 8097
+health_path = "/health"
+command = [
+  "/usr/bin/env", "TURBO_AUTO_ASYMMETRIC=0", "{LLAMA_BIN}",
+  "-m", "{GGUF_MODEL}",
+  "--host", "0.0.0.0", "--port", "8097",
+  "--gpu-layers", "all", "--fit", "off", "--no-host",
+  "--threads", "4", "--threads-batch", "8",
+  "--ctx-size", "1048576", "--parallel", "1",
+  "--batch-size", "2048", "--ubatch-size", "512",
+  "--flash-attn", "on",
+  "--cache-type-k", "turbo2", "--cache-type-v", "turbo2",
+  "--ctx-checkpoints", "2", "--checkpoint-min-step", "256",
+  "--cache-ram", "0", "--no-cont-batching",
+  "--rope-scaling", "yarn", "--rope-scale", "4.0",
+  "--yarn-orig-ctx", "262144", "--rope-freq-base", "10000000",
+  "--override-kv", "qwen35moe.context_length=int:1048576",
+  "--jinja", "--reasoning", "off", "--reasoning-format", "none",
+  "--no-warmup", "--metrics"
+]
+
+# Measured on this 32 GiB M1 Max at a runtime-only 29696 MiB Metal ceiling.
+# The 196K profile retains q8 K and is the recommended agent default.  The
+# larger profiles compress K and are intentionally labelled experimental.
+[profiles.llama-27b-q6-quality-200k]
+engine = "llama.cpp"
+description = "DEFAULT: Qwen3.6 27B Q6, ~200K (196608), quality-first q8 K + Turbo4 V (10.09 tok/s)"
+port = 8097
+health_path = "/health"
+command = [
+  "{LLAMA_BIN}",
+  "-m", "{QWEN27_Q6_MODEL}",
+  "--host", "0.0.0.0", "--port", "8097",
+  "--gpu-layers", "all", "--fit", "off", "--no-host",
+  "--threads", "4", "--threads-batch", "8",
+  "--ctx-size", "196608", "--parallel", "1",
+  "--batch-size", "1024", "--ubatch-size", "256",
+  "--flash-attn", "on",
+  "--cache-type-k", "q8_0", "--cache-type-v", "turbo4",
+  "--ctx-checkpoints", "2", "--checkpoint-min-step", "256",
+  "--cache-ram", "512", "--no-cont-batching",
+  "--jinja", "--reasoning", "off", "--reasoning-format", "none",
+  "--no-warmup", "--metrics"
+]
+
+[profiles.llama-27b-q6-native-262k]
+engine = "llama.cpp"
+description = "EXPERIMENTAL K compression: Qwen3.6 27B Q6, native 262K, true Turbo4 K/V (9.93 tok/s)"
+port = 8097
+health_path = "/health"
+command = [
+  "/usr/bin/env", "TURBO_AUTO_ASYMMETRIC=0", "{LLAMA_BIN}",
+  "-m", "{QWEN27_Q6_MODEL}",
+  "--host", "0.0.0.0", "--port", "8097",
+  "--gpu-layers", "all", "--fit", "off", "--no-host",
+  "--threads", "4", "--threads-batch", "8",
+  "--ctx-size", "262144", "--parallel", "1",
+  "--batch-size", "1024", "--ubatch-size", "256",
+  "--flash-attn", "on",
+  "--cache-type-k", "turbo4", "--cache-type-v", "turbo4",
+  "--ctx-checkpoints", "2", "--checkpoint-min-step", "256",
+  "--cache-ram", "0", "--no-cont-batching",
+  "--jinja", "--reasoning", "off", "--reasoning-format", "none",
+  "--no-warmup", "--metrics"
+]
+
+[profiles.llama-27b-q6-extended-395k]
+engine = "llama.cpp"
+description = "EXPERIMENTAL capacity: Qwen3.6 27B Q6, 395264, Turbo3 K/V + YaRN; short-prompt tested only"
+port = 8097
+health_path = "/health"
+command = [
+  "/usr/bin/env", "TURBO_AUTO_ASYMMETRIC=0", "{LLAMA_BIN}",
+  "-m", "{QWEN27_Q6_MODEL}",
+  "--host", "0.0.0.0", "--port", "8097",
+  "--gpu-layers", "all", "--fit", "off", "--no-host",
+  "--threads", "4", "--threads-batch", "8",
+  "--ctx-size", "395264", "--parallel", "1",
+  "--batch-size", "1024", "--ubatch-size", "256",
+  "--flash-attn", "on",
+  "--cache-type-k", "turbo3", "--cache-type-v", "turbo3",
+  "--ctx-checkpoints", "2", "--checkpoint-min-step", "256",
+  "--cache-ram", "0", "--no-cont-batching",
+  "--rope-scaling", "yarn", "--rope-scale", "1.5078125",
+  "--yarn-orig-ctx", "262144", "--rope-freq-base", "10000000",
+  "--override-kv", "qwen35.context_length=int:395264",
+  "--jinja", "--reasoning", "off", "--reasoning-format", "none",
+  "--no-warmup", "--metrics"
+]
+
+[profiles.llama-27b-q6-frontier-524k]
+engine = "llama.cpp"
+description = "FRONTIER/NOT DEFAULT: Qwen3.6 27B Q6, 524288, Turbo2 K/V + 2x YaRN; allocation tested only"
+port = 8097
+health_path = "/health"
+command = [
+  "/usr/bin/env", "TURBO_AUTO_ASYMMETRIC=0", "{LLAMA_BIN}",
+  "-m", "{QWEN27_Q6_MODEL}",
+  "--host", "0.0.0.0", "--port", "8097",
+  "--gpu-layers", "all", "--fit", "off", "--no-host",
+  "--threads", "4", "--threads-batch", "8",
+  "--ctx-size", "524288", "--parallel", "1",
+  "--batch-size", "1024", "--ubatch-size", "256",
+  "--flash-attn", "on",
+  "--cache-type-k", "turbo2", "--cache-type-v", "turbo2",
+  "--ctx-checkpoints", "2", "--checkpoint-min-step", "256",
+  "--cache-ram", "0", "--no-cont-batching",
+  "--rope-scaling", "yarn", "--rope-scale", "2.0",
+  "--yarn-orig-ctx", "262144", "--rope-freq-base", "10000000",
+  "--override-kv", "qwen35.context_length=int:524288",
+  "--jinja", "--reasoning", "off", "--reasoning-format", "none",
+  "--no-warmup", "--metrics"
+]
+
+# Direct translation of the proven A5000 strategy. It deliberately extends
+# beyond the model's native 262144 context and therefore needs quality testing.
+[profiles.llama-a5000-350k]
+engine = "llama.cpp"
+description = "Experimental A5000-style 350K profile using symmetric Turbo3 and YaRN"
+port = 8097
+health_path = "/health"
+command = [
+  "/usr/bin/env", "TURBO_AUTO_ASYMMETRIC=0", "{LLAMA_BIN}",
+  "-m", "{GGUF_MODEL}",
+  "--host", "0.0.0.0", "--port", "8097",
+  "--gpu-layers", "all", "--fit", "off", "--no-host",
+  "--threads", "4", "--threads-batch", "8",
+  "--ctx-size", "350000", "--parallel", "1",
+  "--batch-size", "2048", "--ubatch-size", "512",
+  "--flash-attn", "on",
+  "--cache-type-k", "turbo3", "--cache-type-v", "turbo3",
+  "--ctx-checkpoints", "2", "--checkpoint-min-step", "256",
+  "--cache-ram", "0", "--no-cont-batching",
+  "--rope-scaling", "yarn", "--rope-scale", "1.3359375",
+  "--yarn-orig-ctx", "262144", "--rope-freq-base", "10000000",
+  "--override-kv", "qwen35moe.context_length=int:350208",
+  "--jinja", "--reasoning", "off", "--reasoning-format", "none",
+  "--no-warmup", "--metrics"
+]
+
+[profiles.llama-a5000-395k]
+engine = "llama.cpp"
+description = "Experimental old text-max profile, aligned to 395264 context with Turbo3 and YaRN"
+port = 8097
+health_path = "/health"
+command = [
+  "/usr/bin/env", "TURBO_AUTO_ASYMMETRIC=0", "{LLAMA_BIN}",
+  "-m", "{GGUF_MODEL}",
+  "--host", "0.0.0.0", "--port", "8097",
+  "--gpu-layers", "all", "--fit", "off", "--no-host",
+  "--threads", "4", "--threads-batch", "8",
+  "--ctx-size", "395264", "--parallel", "1",
+  "--batch-size", "2048", "--ubatch-size", "512",
+  "--flash-attn", "on",
+  "--cache-type-k", "turbo3", "--cache-type-v", "turbo3",
+  "--ctx-checkpoints", "2", "--checkpoint-min-step", "256",
+  "--cache-ram", "0", "--no-cont-batching",
+  "--rope-scaling", "yarn", "--rope-scale", "1.5078125",
+  "--yarn-orig-ctx", "262144", "--rope-freq-base", "10000000",
+  "--override-kv", "qwen35moe.context_length=int:395264",
+  "--jinja", "--reasoning", "off", "--reasoning-format", "none",
+  "--no-warmup", "--metrics"
+]
+
+[profiles.mlx-4bit]
+engine = "mlx-lm"
+description = "Base Qwen3.6 35B-A3B MLX 4-bit comparison; not HauhauCS aggressive weights"
+port = 8098
+health_path = "/v1/models"
+command = [
+  "{PYTHON_BIN}", "-m", "local_llm_control.mlx_quant_server",
+  "--kv-bits", "4", "--kv-group-size", "64",
+  "--model", "{MLX_MODEL}",
+  "--host", "0.0.0.0", "--port", "8098",
+  "--decode-concurrency", "1", "--prompt-concurrency", "1",
+  "--prefill-step-size", "2048",
+  "--prompt-cache-size", "1", "--prompt-cache-bytes", "2147483648",
+  "--temp", "0.7", "--top-p", "0.8", "--top-k", "20", "--min-p", "0.0",
+  "--chat-template-args", '{"enable_thinking":false}'
+]
+
+[profiles.mlx-vlm-finance-bf16]
+engine = "mlx-vlm"
+description = "HisabClub quality-first VLM runtime; OvisOCR2 BF16 primary with dynamic BF16 model switching"
+port = 8098
+health_path = "/v1/models"
+command = [
+  "{PYTHON_BIN}", "-m", "mlx_vlm.server",
+  "--model", "{OVIS_OCR_BF16_MODEL}",
+  "--host", "127.0.0.1", "--port", "8098",
+  "--trust-remote-code",
+  "--vision-cache-size", "1",
+  "--prefill-step-size", "2048",
+  "--max-tokens", "16384",
+  "--log-progress-interval", "50",
+  "--log-level", "INFO"
+]
+
+[profiles.mlx-vlm-muse-glimmer-30b-awq4]
+engine = "mlx-vlm"
+description = "Muse Glimmer 30B Abliterated MLX AWQ 4-bit; native 131K context, text and vision"
+port = 8098
+health_path = "/health"
+command = [
+  "{PYTHON_BIN}", "-m", "mlx_vlm.server",
+  "--model", "{MUSE_GLIMMER_AWQ_MODEL}",
+  "--host", "0.0.0.0", "--port", "8098",
+  "--vision-cache-size", "1",
+  "--prefill-step-size", "512",
+  "--max-kv-size", "131072",
+  "--max-num-seqs", "1",
+  "--max-tokens", "16384",
+  "--log-progress-interval", "10",
+  "--log-level", "INFO"
+]
+
+[profiles.mlx-vlm-muse-glimmer-30b-awq4-text]
+engine = "mlx-vlm"
+description = "Muse Glimmer 30B AWQ 4-bit text-first coding runtime; lazy vision, one reusable 131K prefix snapshot"
+port = 8098
+health_path = "/health"
+environment = { APC_ENABLED = "1", APC_NUM_BLOCKS = "1", APC_EXACT_CACHE_ENTRIES = "1" }
+command = [
+  "{PYTHON_BIN}", "-m", "local_llm_control.mlx_vlm_text_server",
+  "--model", "{MUSE_GLIMMER_AWQ_MODEL}",
+  "--host", "0.0.0.0", "--port", "8098",
+  "--vision-cache-size", "0",
+  "--prefill-step-size", "2048",
+  "--max-kv-size", "131072",
+  "--max-num-seqs", "1",
+  "--max-tokens", "32768",
+  "--log-progress-interval", "10",
+  "--log-level", "INFO"
+]
+
+[profiles.mlx-vlm-muse-glimmer-30b-awq4-dflash]
+engine = "mlx-vlm"
+description = "Muse 30B AWQ4 + adaptive DFlash; 20.6 tok/s on predictable output but slower than plain on measured coding tasks; no prefix reuse"
+port = 8098
+health_path = "/health"
+command = [
+  "{PYTHON_BIN}", "-m", "local_llm_control.mlx_vlm_text_server",
+  "--model", "{MUSE_GLIMMER_AWQ_MODEL}",
+  "--draft-model", "{MUSE_GLIMMER_DFLASH_MODEL}",
+  "--draft-kind", "dflash",
+  "--host", "0.0.0.0", "--port", "8098",
+  "--vision-cache-size", "0",
+  "--prefill-step-size", "2048",
+  "--max-kv-size", "131072",
+  "--max-num-seqs", "1",
+  "--max-tokens", "32768",
+  "--log-progress-interval", "10",
+  "--log-level", "INFO"
+]
+
+[profiles.mlx-vlm-muse-glimmer-30b-awq4-dflash-cached]
+engine = "mlx-vlm"
+description = "Experimental Muse AWQ4 + fixed-4 DFlash + exact append-prefix reuse; 8K follow-up measured 104x faster, decode slower than plain"
+port = 8098
+health_path = "/health"
+environment = { APC_ENABLED = "1", APC_NUM_BLOCKS = "1", APC_EXACT_CACHE_ENTRIES = "1" }
+command = [
+  "{PYTHON_BIN}", "-m", "local_llm_control.mlx_vlm_cached_dflash_server",
+  "--model", "{MUSE_GLIMMER_AWQ_MODEL}",
+  "--draft-model", "{MUSE_GLIMMER_DFLASH_MODEL}",
+  "--draft-kind", "dflash",
+  "--draft-block-size", "4",
+  "--host", "0.0.0.0", "--port", "8098",
+  "--vision-cache-size", "0",
+  "--prefill-step-size", "2048",
+  "--max-kv-size", "131072",
+  "--max-num-seqs", "1",
+  "--max-tokens", "32768",
+  "--log-progress-interval", "10",
+  "--log-level", "INFO"
+]
+
+[profiles.mlx-vlm-muse-glimmer-30b-awq4-dflash-bf16]
+engine = "mlx-vlm"
+description = "Comparison only: official BF16 DFlash used 22.0 GB and was slower than q4 assistant on this M1 Max"
+port = 8098
+health_path = "/health"
+command = [
+  "{PYTHON_BIN}", "-m", "local_llm_control.mlx_vlm_text_server",
+  "--model", "{MUSE_GLIMMER_AWQ_MODEL}",
+  "--draft-model", "{MUSE_GLIMMER_DFLASH_BF16_MODEL}",
+  "--draft-kind", "dflash",
+  "--draft-block-size", "4",
+  "--host", "0.0.0.0", "--port", "8098",
+  "--vision-cache-size", "0",
+  "--prefill-step-size", "2048",
+  "--max-kv-size", "131072",
+  "--max-num-seqs", "1",
+  "--max-tokens", "32768",
+  "--log-progress-interval", "10",
+  "--log-level", "INFO"
+]
+
+[profiles.mlx-dspark-muse-glimmer-30b-awq4]
+engine = "mlx-dspark"
+description = "Experimental Muse Glimmer 30B AWQ 4-bit DSpark runtime; auto-calibrated draft cap and one prefix-cache slot"
+port = 8098
+health_path = "/health"
+command = [
+  "{PYTHON_BIN}", "-m", "local_llm_control.mlx_dspark_text_server", "serve",
+  "--model", "{MUSE_GLIMMER_AWQ_MODEL}",
+  "--mode", "dspark",
+  "--drafter", "{MUSE_GLIMMER_DSPARK_MODEL}",
+  "--max-draft", "auto",
+  "--drafter-bits", "4",
+  "--max-batch", "1",
+  "--context-window", "131072",
+  "--host", "0.0.0.0", "--port", "8098",
+  "--prefix-cache-slots", "1",
+  "--no-thinking",
+  "--default-max-tokens", "32768",
+  "--max-tokens-cap", "32768"
+]
+
+# Experimental mixed NVFP4/E4M3 Qwen3.8 checkpoint. The publisher targets
+# mlx-node on NVIDIA DGX Spark; this profile exists for an operator-triggered
+# macOS compatibility test and is never started automatically.
+[profiles.mlx-vlm-qwen38-nvfp4]
+engine = "mlx-vlm"
+description = "EXPERIMENTAL: Qwen3.8 27B mixed NVFP4/E4M3; publisher targets DGX Spark, test macOS compatibility before use"
+port = 8098
+health_path = "/health"
+command = [
+  "{PYTHON_BIN}", "-m", "local_llm_control.mlx_vlm_text_server",
+  "--model", "{QWEN38_NVFP4_MODEL}",
+  "--host", "0.0.0.0", "--port", "8098",
+  "--vision-cache-size", "0",
+  "--prefill-step-size", "2048",
+  "--max-kv-size", "262144",
+  "--max-num-seqs", "1",
+  "--max-tokens", "8192",
+  "--log-progress-interval", "10",
+  "--log-level", "INFO"
+]
+
+# Yukon/EigenLabs Qwen3.8 native-MTP pair. Both artifacts are revision-pinned
+# by scripts/download_qwen38_mtp.sh. The serial profile is retained as the
+# same-runtime control; it is required to tell whether MTP helps this M1 Max.
+[profiles.mlx-vlm-qwen38-q4-serial]
+engine = "mlx-vlm"
+description = "Qwen3.8 27B affine Q4 serial control; native KV, 262K request ceiling, reusable exact prefixes"
+port = 8098
+health_path = "/health"
+environment = { APC_ENABLED = "1", APC_NUM_BLOCKS = "1", APC_EXACT_CACHE_ENTRIES = "1", LOCAL_LLM_ALLOW_MISSING_VISION = "1" }
+command = [
+  "{PYTHON_BIN}", "-m", "local_llm_control.mlx_vlm_text_server",
+  "--model", "{QWEN38_MTP_MODEL}",
+  "--host", "0.0.0.0", "--port", "8098",
+  "--vision-cache-size", "0",
+  "--prefill-step-size", "2048",
+  "--max-kv-size", "262144",
+  "--max-num-seqs", "1",
+  "--max-tokens", "32768",
+  "--log-progress-interval", "10",
+  "--log-level", "INFO"
+]
+
+# Production-oriented long-context preset. Native MTP is deliberately omitted:
+# on this M1 Max its extra 248K-vocabulary projection costs more than verification
+# saves, even at 100% draft acceptance. Turbo4 compresses only the growing KV;
+# the target model itself and serial decoder remain unchanged.
+[profiles.mlx-vlm-qwen38-q4-turbo4]
+engine = "mlx-vlm"
+description = "RECOMMENDED: Qwen3.8 27B Q4 serial decode + Turbo4 KV; 262K ceiling and exact-prefix reuse"
+port = 8098
+health_path = "/health"
+environment = { APC_ENABLED = "1", APC_NUM_BLOCKS = "1", APC_EXACT_CACHE_ENTRIES = "1", LOCAL_LLM_ALLOW_MISSING_VISION = "1" }
+command = [
+  "{PYTHON_BIN}", "-m", "local_llm_control.mlx_vlm_text_server",
+  "--model", "{QWEN38_MTP_MODEL}",
+  "--kv-bits", "4",
+  "--kv-quant-scheme", "turboquant",
+  "--quantized-kv-start", "1024",
+  "--host", "0.0.0.0", "--port", "8098",
+  "--vision-cache-size", "0",
+  "--prefill-step-size", "2048",
+  "--max-kv-size", "262144",
+  "--max-num-seqs", "1",
+  "--max-tokens", "32768",
+  "--log-progress-interval", "10",
+  "--log-level", "INFO"
+]
+
+[profiles.mlx-vlm-qwen38-q4-turbo4-deep]
+engine = "mlx-vlm"
+description = "EXPERIMENTAL DEEP: serial Q4 + Turbo4, 512-token cold-prefill chunks; 262K ceiling, validated locally through 32K"
+port = 8098
+health_path = "/health"
+environment = { APC_ENABLED = "1", APC_NUM_BLOCKS = "1", APC_EXACT_CACHE_ENTRIES = "1", LOCAL_LLM_ALLOW_MISSING_VISION = "1" }
+command = [
+  "{PYTHON_BIN}", "-m", "local_llm_control.mlx_vlm_text_server",
+  "--model", "{QWEN38_MTP_MODEL}",
+  "--kv-bits", "4",
+  "--kv-quant-scheme", "turboquant",
+  "--quantized-kv-start", "1024",
+  "--host", "0.0.0.0", "--port", "8098",
+  "--vision-cache-size", "0",
+  "--prefill-step-size", "512",
+  "--max-kv-size", "262144",
+  "--max-num-seqs", "1",
+  "--max-tokens", "8192",
+  "--log-progress-interval", "10",
+  "--log-level", "INFO"
+]
+
+# Official Qwen3.8-27B affine-Q4 target paired with the exact DFlash2 draft.
+# The proposal model is already affine-Q4, so do not quantize it a second time.
+# Target KV8 plus the draft's 2K sliding window keeps the 262K ceiling practical
+# on a 32 GiB machine. Upstream prefix snapshots cannot serialize QuantizedKVCache,
+# so this capacity profile disables snapshots instead of failing after prefill.
+[profiles.mlx-dflash2-qwen38-q4]
+engine = "mlx-dflash"
+description = "RECOMMENDED CAPACITY: Qwen3.8 27B Q4 + DFlash2 Q4, KV8, guarded 96K context"
+port = 8098
+health_path = "/v1/models"
+command = [
+  "{DFLASH_BIN}", "serve",
+  "--model", "{QWEN38_DFLASH2_MODEL}",
+  "--draft", "{QWEN38_DFLASH2_DRAFT}",
+  "--draft-quant", "none",
+  "--verify-mode", "dflash",
+  "--verify-len-cap", "4",
+  "--copyspec-mode", "auto",
+  "--prefill-step-size", "2048",
+  "--draft-sink-size", "64",
+  "--draft-window-size", "2048",
+  "--draft-full-context-min-ctx", "16384",
+  "--quantize-kv-cache",
+  "--dflash-max-ctx", "98304",
+  "--no-prefix-cache",
+  "--wired-limit", "auto",
+  "--cache-limit", "2GB",
+  "--host", "0.0.0.0", "--port", "8098",
+  "--chat-template-args", '{"enable_thinking":false}',
+  "--max-tokens", "32768",
+  "--log-level", "INFO"
+]
+
+# Experimental full-native-context capacity profile. DFlash creates the
+# recurrent rollback caches normally, while dflash-compat replaces only the 16
+# context-growing attention caches with rotated TurboQuant4. Prefix snapshots
+# remain disabled because upstream DFlash cannot serialize this cache format.
+[profiles.mlx-dflash2-qwen38-q4-turbo4-262k]
+engine = "mlx-dflash"
+description = "EXPERIMENTAL MAX CONTEXT: Qwen3.8 27B Q4 + DFlash2 Q4 + real Turbo4 KV, native 262K ceiling"
+port = 8098
+health_path = "/v1/models"
+environment = { LOCAL_LLM_DFLASH_TURBOQUANT = "turbo4", LOCAL_LLM_DFLASH_TURBOQUANT_MAX_SIZE = "262144" }
+command = [
+  "{DFLASH_BIN}", "serve",
+  "--model", "{QWEN38_DFLASH2_MODEL}",
+  "--draft", "{QWEN38_DFLASH2_DRAFT}",
+  "--draft-quant", "none",
+  "--verify-mode", "dflash",
+  "--verify-len-cap", "4",
+  "--copyspec-mode", "auto",
+  "--prefill-step-size", "96",
+  "--draft-sink-size", "64",
+  "--draft-window-size", "2048",
+  "--draft-full-context-min-ctx", "16384",
+  "--quantize-kv-cache",
+  "--dflash-max-ctx", "262144",
+  "--no-prefix-cache",
+  "--wired-limit", "auto",
+  "--cache-limit", "1GB",
+  "--host", "0.0.0.0", "--port", "8098",
+  "--chat-template-args", '{"enable_thinking":false}',
+  "--max-tokens", "8192",
+  "--log-level", "INFO"
+]
+
+# Native target KV permits exact prefix snapshot reuse. It uses about twice the
+# long-context KV memory of the capacity profile, so validate depth separately.
+[profiles.mlx-dflash2-qwen38-q4-cached]
+engine = "mlx-dflash"
+description = "RECOMMENDED CODING: Qwen3.8 27B Q4 + DFlash2 Q4, reusable prefixes, guarded 64K context"
+port = 8098
+health_path = "/v1/models"
+command = [
+  "{DFLASH_BIN}", "serve",
+  "--model", "{QWEN38_DFLASH2_MODEL}",
+  "--draft", "{QWEN38_DFLASH2_DRAFT}",
+  "--draft-quant", "none",
+  "--verify-mode", "dflash",
+  "--verify-len-cap", "4",
+  "--copyspec-mode", "auto",
+  "--prefill-step-size", "2048",
+  "--draft-sink-size", "64",
+  "--draft-window-size", "2048",
+  "--draft-full-context-min-ctx", "16384",
+  "--dflash-max-ctx", "65536",
+  "--prefix-cache",
+  "--prefix-cache-max-entries", "1",
+  "--prefix-cache-max-bytes", "2GB",
+  "--prefix-cache-l2",
+  "--prefix-cache-l2-dir", "run/qwen38-dflash2-prefix-cache",
+  "--prefix-cache-l2-max-bytes", "20GB",
+  "--prefix-cache-l2-frontier-stride", "8192",
+  "--max-snapshot-tokens", "262144",
+  "--wired-limit", "auto",
+  "--cache-limit", "2GB",
+  "--host", "0.0.0.0", "--port", "8098",
+  "--chat-template-args", '{"enable_thinking":false}',
+  "--max-tokens", "32768",
+  "--log-level", "INFO"
+]
+
+[profiles.mlx-dflash2-qwen38-q4-serial-control]
+engine = "mlx-dflash"
+description = "BENCHMARK CONTROL: same official Qwen3.8 Q4 target, target-only AR with KV8"
+port = 8098
+health_path = "/v1/models"
+command = [
+  "{DFLASH_BIN}", "serve",
+  "--model", "{QWEN38_DFLASH2_MODEL}",
+  "--draft", "{QWEN38_DFLASH2_DRAFT}",
+  "--draft-quant", "none",
+  "--verify-mode", "dflash",
+  "--fastpath-max-tokens", "512",
+  "--copyspec-mode", "off",
+  "--prefill-step-size", "2048",
+  "--quantize-kv-cache",
+  "--dflash-max-ctx", "262144",
+  "--no-prefix-cache",
+  "--wired-limit", "auto",
+  "--cache-limit", "2GB",
+  "--host", "0.0.0.0", "--port", "8098",
+  "--max-tokens", "32768",
+  "--log-level", "INFO"
+]
+
+[profiles.mlx-vlm-qwen38-q4-mtp]
+engine = "mlx-vlm"
+description = "BENCHMARK ONLY: native Q4 MTP fixed-4; slower on coding than serial decode on this M1 Max"
+port = 8098
+health_path = "/health"
+environment = { APC_ENABLED = "1", APC_NUM_BLOCKS = "1", APC_EXACT_CACHE_ENTRIES = "1", LOCAL_LLM_ALLOW_MISSING_VISION = "1" }
+command = [
+  "{PYTHON_BIN}", "-m", "local_llm_control.mlx_vlm_text_server",
+  "--model", "{QWEN38_MTP_MODEL}",
+  "--draft-model", "{QWEN38_MTP_HEAD}",
+  "--draft-kind", "mtp",
+  "--draft-block-size", "4",
+  "--host", "0.0.0.0", "--port", "8098",
+  "--vision-cache-size", "0",
+  "--prefill-step-size", "2048",
+  "--max-kv-size", "262144",
+  "--max-num-seqs", "1",
+  "--max-tokens", "32768",
+  "--log-progress-interval", "10",
+  "--log-level", "INFO"
+]
+
+[profiles.mlx-vlm-qwen38-q4-mtp-fixed2]
+engine = "mlx-vlm"
+description = "BENCHMARK ONLY: native Q4 MTP one-draft verify; 14.2 tok/s despite 100% acceptance"
+port = 8098
+health_path = "/health"
+environment = { APC_ENABLED = "1", APC_NUM_BLOCKS = "1", APC_EXACT_CACHE_ENTRIES = "1", LOCAL_LLM_ALLOW_MISSING_VISION = "1" }
+command = [
+  "{PYTHON_BIN}", "-m", "local_llm_control.mlx_vlm_text_server",
+  "--model", "{QWEN38_MTP_MODEL}",
+  "--draft-model", "{QWEN38_MTP_HEAD}",
+  "--draft-kind", "mtp",
+  "--draft-block-size", "2",
+  "--host", "0.0.0.0", "--port", "8098",
+  "--vision-cache-size", "0",
+  "--prefill-step-size", "2048",
+  "--max-kv-size", "262144",
+  "--max-num-seqs", "1",
+  "--max-tokens", "32768",
+  "--log-progress-interval", "10",
+  "--log-level", "INFO"
+]
+
+[profiles.mlx-vlm-qwen38-q4-mtp-adaptive]
+engine = "mlx-vlm"
+description = "BENCHMARK ONLY: Yukon-style adaptive MTP; 9.1 tok/s on M1 due full-vocabulary draft projection"
+port = 8098
+health_path = "/health"
+environment = { APC_ENABLED = "1", APC_NUM_BLOCKS = "1", APC_EXACT_CACHE_ENTRIES = "1", LOCAL_LLM_MTP_HEAD_COST_RATIO = "0.18", LOCAL_LLM_ALLOW_MISSING_VISION = "1" }
+command = [
+  "{PYTHON_BIN}", "-m", "local_llm_control.mlx_vlm_adaptive_mtp_server",
+  "--model", "{QWEN38_MTP_MODEL}",
+  "--draft-model", "{QWEN38_MTP_HEAD}",
+  "--draft-kind", "mtp",
+  "--draft-block-size", "6",
+  "--host", "0.0.0.0", "--port", "8098",
+  "--vision-cache-size", "0",
+  "--prefill-step-size", "2048",
+  "--max-kv-size", "262144",
+  "--max-num-seqs", "1",
+  "--max-tokens", "32768",
+  "--log-progress-interval", "10",
+  "--log-level", "INFO"
+]
+
+[profiles.mlx-vlm-qwen38-q4-mtp-turbo4]
+engine = "mlx-vlm"
+description = "BENCHMARK ONLY: native MTP + real Turbo4 KV; serial Turbo4 is faster and recommended"
+port = 8098
+health_path = "/health"
+environment = { APC_ENABLED = "1", APC_NUM_BLOCKS = "1", APC_EXACT_CACHE_ENTRIES = "1", LOCAL_LLM_ALLOW_MISSING_VISION = "1" }
+command = [
+  "{PYTHON_BIN}", "-m", "local_llm_control.mlx_vlm_text_server",
+  "--model", "{QWEN38_MTP_MODEL}",
+  "--draft-model", "{QWEN38_MTP_HEAD}",
+  "--draft-kind", "mtp",
+  "--draft-block-size", "4",
+  "--kv-bits", "4",
+  "--kv-quant-scheme", "turboquant",
+  "--quantized-kv-start", "1024",
+  "--host", "0.0.0.0", "--port", "8098",
+  "--vision-cache-size", "0",
+  "--prefill-step-size", "2048",
+  "--max-kv-size", "262144",
+  "--max-num-seqs", "1",
+  "--max-tokens", "32768",
+  "--log-progress-interval", "10",
+  "--log-level", "INFO"
+]
+
+[profiles.mlx-vlm-paddle16-bf16]
+engine = "mlx-vlm"
+description = "HisabClub PaddleOCR-VL 1.6 BF16 comparison runtime"
+port = 8098
+health_path = "/v1/models"
+command = [
+  "{PYTHON_BIN}", "-m", "mlx_vlm.server",
+  "--model", "{PADDLE_OCR_16_BF16_MODEL}",
+  "--host", "127.0.0.1", "--port", "8098",
+  "--trust-remote-code",
+  "--vision-cache-size", "1",
+  "--prefill-step-size", "2048",
+  "--max-tokens", "16384",
+  "--log-progress-interval", "50",
+  "--log-level", "INFO"
+]
+
+[profiles.mlx-vlm-glm-ocr-bf16]
+engine = "mlx-vlm"
+description = "HisabClub GLM-OCR BF16 comparison runtime"
+port = 8098
+health_path = "/v1/models"
+command = [
+  "{PYTHON_BIN}", "-m", "mlx_vlm.server",
+  "--model", "{GLM_OCR_BF16_MODEL}",
+  "--host", "127.0.0.1", "--port", "8098",
+  "--trust-remote-code",
+  "--vision-cache-size", "1",
+  "--prefill-step-size", "2048",
+  "--max-tokens", "16384",
+  "--log-progress-interval", "50",
+  "--log-level", "INFO"
+]
+
+[profiles.mlx-vlm-semantic-6bit]
+engine = "mlx-vlm"
+description = "HisabClub Qwen3.5 9B 6-bit schema-constrained semantic structuring and review"
+port = 8098
+health_path = "/v1/models"
+command = [
+  "{PYTHON_BIN}", "-m", "mlx_vlm.server",
+  "--model", "{QWEN_SEMANTIC_6BIT_MODEL}",
+  "--host", "127.0.0.1", "--port", "8098",
+  "--vision-cache-size", "1",
+  "--prefill-step-size", "2048",
+  "--max-tokens", "8192",
+  "--log-progress-interval", "50",
+  "--log-level", "INFO"
+]
+
+[profiles.mlx-vlm-nuextract-bf16]
+engine = "mlx-vlm"
+description = "HisabClub NuExtract3 BF16 difficult-document extraction runtime"
+port = 8098
+health_path = "/v1/models"
+command = [
+  "{PYTHON_BIN}", "-m", "mlx_vlm.server",
+  "--model", "{NUEXTRACT_BF16_MODEL}",
+  "--host", "127.0.0.1", "--port", "8098",
+  "--vision-cache-size", "1",
+  "--prefill-step-size", "2048",
+  "--max-tokens", "16384",
+  "--log-progress-interval", "50",
+  "--log-level", "INFO"
+]
+
+# Prepared for an operator-triggered benchmark; never started automatically.
+# DFlash currently has its own 8-bit target KV path and does not use this
+# repository's Turbo4 cache. The native model ceiling is a request cap rather
+# than a startup reservation, so memory grows with the live prompt.
+[profiles.mlx-dflash-hauhau35-optiq4]
+engine = "mlx-dflash"
+description = "EXPERIMENTAL: HauhauCS 35B-A3B OptiQ 4-bit + DFlash w4 draft, native KV + reusable prefix snapshots, 262K cap"
+port = 8098
+health_path = "/v1/models"
+command = [
+  "{DFLASH_BIN}", "serve",
+  "--model", "{HAUHAU35_OPTIQ_MLX_MODEL}",
+  "--draft", "{DFLASH_35B_DRAFT}",
+  "--draft-quant", "w4",
+  "--host", "0.0.0.0", "--port", "8098",
+  "--temp", "0.0", "--max-tokens", "8192",
+  "--chat-template-args", '{"enable_thinking":false}',
+  "--prefill-step-size", "2048",
+  "--verify-mode", "adaptive",
+  "--copyspec-mode", "conservative",
+  "--verify-len-cap", "0",
+  "--dflash-max-ctx", "262144",
+  "--draft-sink-size", "64",
+  "--draft-window-size", "1024",
+  "--draft-full-context-min-ctx", "16384",
+  "--prefix-cache",
+  "--prefix-cache-max-entries", "1",
+  "--prefix-cache-max-bytes", "3GB",
+  "--max-snapshot-tokens", "131072",
+  "--prefix-cache-l2",
+  "--prefix-cache-l2-dir", "run/dflash-prefix-cache",
+  "--prefix-cache-l2-max-bytes", "20GB",
+  "--clear-cache-boundaries",
+  "--cache-limit", "2GB",
+  "--diagnostics", "basic"
+]

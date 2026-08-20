@@ -1,0 +1,43 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "local-mlx": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "M1 Max MLX — 40B dense fixed 128K",
+      "options": {
+        "baseURL": "http://192.168.1.117:8098/v1",
+        "apiKey": "sk-opencode",
+        "timeout": 2400000,
+        "chunkTimeout": 2400000
+      },
+      "models": {
+        "default_model": {
+          "name": "Qwen3.6 40B dense — Turbo4 + session reuse",
+          "limit": {
+            "context": 122880,
+            "output": 8192
+          }
+        }
+      }
+    }
+  },
+  "enabled_providers": ["local-mlx"],
+  "model": "local-mlx/default_model",
+  "small_model": "local-mlx/default_model",
+  "default_agent": "build",
+  "compaction": {
+    "auto": false,
+    "prune": false,
+    "reserved": 8192
+  },
+  "agent": {
+    "title": {
+      "disable": true
+    }
+  },
+  "permission": {
+    "*": "allow",
+    "task": "deny"
+  },
+  "share": "disabled"
+}

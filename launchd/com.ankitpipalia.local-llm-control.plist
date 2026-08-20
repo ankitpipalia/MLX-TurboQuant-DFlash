@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ankitpipalia.local-llm-control</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/ankitpipalia/Git/local-llm/.venv/bin/llm-control</string>
+    <string>serve</string>
+    <string>--host</string>
+    <string>0.0.0.0</string>
+    <string>--port</string>
+    <string>8090</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/ankitpipalia/Git/local-llm</string>
+  <key>UserName</key>
+  <string>ankitpipalia</string>
+  <key>GroupName</key>
+  <string>staff</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>/Users/ankitpipalia</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>PYTHONUNBUFFERED</key>
+    <string>1</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <false/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>StandardOutPath</key>
+  <string>/Users/ankitpipalia/Git/local-llm/logs/control-service.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/ankitpipalia/Git/local-llm/logs/control-service.log</string>
+</dict>
+</plist>

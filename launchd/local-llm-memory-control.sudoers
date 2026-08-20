@@ -1,0 +1,3 @@
+# Installed as /etc/sudoers.d/local-llm-memory-control (mode 0440).
+# The root-owned helper validates the numeric range before calling sysctl.
+ankitpipalia ALL=(root) NOPASSWD: /usr/local/sbin/local-llm-memory-control *

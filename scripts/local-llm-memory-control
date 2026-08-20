@@ -1,0 +1,25 @@
+#!/usr/bin/python3
+"""Root-owned, narrowly scoped helper for changing the Apple GPU wired limit."""
+
+import os
+import sys
+
+
+def main() -> int:
+    if len(sys.argv) != 2:
+        print("usage: local-llm-memory-control MIB", file=sys.stderr)
+        return 2
+    try:
+        limit = int(sys.argv[1])
+    except ValueError:
+        print("limit must be an integer MiB value", file=sys.stderr)
+        return 2
+    if limit != 0 and not (20480 <= limit <= 30720):
+        print("limit must be 0 or between 20480 and 30720 MiB", file=sys.stderr)
+        return 2
+    os.execv("/usr/sbin/sysctl", ["sysctl", "-w", f"iogpu.wired_limit_mb={limit}"])
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

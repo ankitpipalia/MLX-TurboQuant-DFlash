@@ -1,0 +1,34 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "qwen38-mlx": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "M1 Max Qwen3.8 27B Q4 — DFlash2 cached",
+      "options": {
+        "baseURL": "http://192.168.1.118:8098/v1",
+        "apiKey": "sk-opencode",
+        "timeout": 2400000,
+        "chunkTimeout": 2400000
+      },
+      "models": {
+        "/Users/ankitpipalia/Models/mlx/mlx-community--Qwen3.8-27B-4bit": {
+          "name": "Qwen3.8 27B Q4 — DFlash2 + append cache",
+          "limit": {
+            "context": 65536,
+            "output": 8192
+          }
+        }
+      }
+    }
+  },
+  "enabled_providers": ["qwen38-mlx"],
+  "model": "qwen38-mlx//Users/ankitpipalia/Models/mlx/mlx-community--Qwen3.8-27B-4bit",
+  "small_model": "qwen38-mlx//Users/ankitpipalia/Models/mlx/mlx-community--Qwen3.8-27B-4bit",
+  "default_agent": "build",
+  "compaction": {
+    "auto": false,
+    "prune": false,
+    "reserved": 8192
+  },
+  "permission": "allow"
+}

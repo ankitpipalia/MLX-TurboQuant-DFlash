@@ -1,0 +1,41 @@
+[runtime]
+mlx_vlm_version = "0.6.13"
+mlx_vlm_revision = "7ee8eba362e9c462712dbb7294e9c85e15b66720"
+host = "127.0.0.1"
+port = 8098
+primary_profile = "mlx-vlm-finance-bf16"
+
+[models.ocr_primary]
+repository = "st0722/OvisOCR2-MLX-BF16"
+revision = "f22a2b84b8570193364d2020f7050d5e6024c17a"
+path = "/Users/ankitpipalia/Models/mlx/OvisOCR2-MLX-BF16"
+precision = "bf16"
+role = "faithful page transcription"
+
+[models.ocr_paddle]
+repository = "matrixmaven/PaddleOCR-VL-1.6-bf16"
+revision = "7fb1845e6e3ca856ec7788c4ea700cef175ee8ba"
+path = "/Users/ankitpipalia/Models/mlx/PaddleOCR-VL-1.6-bf16"
+precision = "bf16"
+role = "OCR comparison and targeted repair"
+
+[models.ocr_glm]
+repository = "mlx-community/GLM-OCR-bf16"
+revision = "24f15402e83baa0a80eeeaecf5480e172abc6f2e"
+path = "/Users/ankitpipalia/Models/mlx/GLM-OCR-bf16"
+precision = "bf16"
+role = "OCR comparison and targeted repair"
+
+[models.semantic]
+repository = "mlx-community/Qwen3.5-9B-6bit"
+revision = "76fe4065e622cf34990d3c13ef80ec8531c9a0f7"
+path = "/Users/ankitpipalia/Models/mlx/Qwen3.5-9B-6bit"
+precision = "6bit"
+role = "schema-constrained semantic structuring and final review"
+
+[models.hard_extraction]
+repository = "mlx-community/NuExtract3-bf16"
+revision = "e21940abea8f6c34b9e273f45a60b18b8b314753"
+path = "/Users/ankitpipalia/Models/mlx/NuExtract3-bf16"
+precision = "bf16"
+role = "difficult structured document extraction"

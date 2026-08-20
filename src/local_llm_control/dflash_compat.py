@@ -201,8 +201,10 @@ def install_dflash_turboquant() -> None:
                 converted += 1
         if not converted:
             raise RuntimeError(
-                "DFlash Turbo4 requires --quantize-kv-cache and found no "
-                "full-attention QuantizedKVCache entries"
+                "DFlash Turbo4 found no convertible full-attention KV caches. "
+                "Snapshot mode expects native KVCache entries (omit "
+                "--quantize-kv-cache); non-snapshot mode expects "
+                "QuantizedKVCache entries (pass --quantize-kv-cache)."
             )
         expected = expected_full_attention_caches(self, target_model)
         if expected is not None and converted != expected:

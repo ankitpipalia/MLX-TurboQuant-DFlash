@@ -66,6 +66,26 @@ def is_packed_state(state: Any) -> bool:
     return state is not None and isinstance(state[0], tuple)
 
 
+def tree_nbytes(value: Any) -> int:
+    """Sum ``nbytes`` over a single array or an arbitrarily nested container.
+
+    ``DFlashPrefixSnapshot.nbytes_breakdown`` reads ``fa[0].nbytes`` directly,
+    which works for a single array per side but raises ``AttributeError`` on a
+    packed triple. That is not just telemetry: the L1 cache calls ``nbytes``
+    while admitting a snapshot and enforcing its byte budget, so the first
+    insertion of a Turbo4 snapshot would fail. Recursing rather than
+    special-casing exactly three components keeps this working if the packed
+    representation ever changes.
+    """
+    if value is None:
+        return 0
+    if hasattr(value, "nbytes"):
+        return int(value.nbytes)
+    if isinstance(value, (tuple, list)):
+        return sum(tree_nbytes(item) for item in value)
+    raise TypeError(f"Cannot size cache state component of type {type(value).__name__}")
+
+
 def snapshots_enabled() -> bool:
     return os.getenv(_SNAPSHOT_ENV, "").strip() == "1"
 
@@ -176,6 +196,7 @@ def install_turbo4_prefix_snapshots() -> None:
         )
 
     from dflash_mlx.cache import codecs, prefix_l2
+    from dflash_mlx.cache.snapshot import DFlashPrefixSnapshot
     from dflash_mlx.recurrent_rollback_cache import RecurrentRollbackCache
     from dflash_mlx.server import prefix_cache_manager
     from mlx_turboquant.kv_cache import TurboQuantKVCache
@@ -188,6 +209,7 @@ def install_turbo4_prefix_snapshots() -> None:
     original_l2_serialize = prefix_l2._serialize
     original_sidecar_eligible = codecs.sidecar_eligible
     original_slice = codecs.slice_snapshot_at_sidecar_boundary
+    original_breakdown = DFlashPrefixSnapshot.nbytes_breakdown
 
     def serialize_target_cache(target_cache: list[Any], *, clone: bool = True):
         if not any(isinstance(e, TurboQuantKVCache) for e in target_cache):
@@ -338,6 +360,26 @@ def install_turbo4_prefix_snapshots() -> None:
             created_at=snapshot.created_at,
         )
 
+    def nbytes_breakdown(self: Any) -> dict[str, int]:
+        # Delegate for native snapshots; upstream raises on packed triples, so
+        # the whole breakdown is recomputed rather than patched afterwards.
+        if not any(is_packed_state(s) for s in self.fa_states):
+            return original_breakdown(self)
+        return {
+            "fa_kv": sum(
+                tree_nbytes(state[0]) + tree_nbytes(state[1])
+                for state in self.fa_states
+                if state is not None
+            ),
+            "gdn_state": tree_nbytes(self.gdn_states),
+            "draft_context": tree_nbytes(self.target_hidden_chunks),
+            "last_logits": tree_nbytes(self.last_logits),
+            "sidecar": (
+                tree_nbytes(self.sidecar_gdn_states)
+                + tree_nbytes(self.sidecar_last_logits)
+            ),
+        }
+
     def _serialize(snapshot: Any):
         for state in snapshot.fa_states:
             if state is not None and isinstance(state[0], tuple):
@@ -354,6 +396,7 @@ def install_turbo4_prefix_snapshots() -> None:
     build_prefix_key._local_llm_original = original_build_key  # type: ignore[attr-defined]
     _serialize._local_llm_original = original_l2_serialize  # type: ignore[attr-defined]
 
+    DFlashPrefixSnapshot.nbytes_breakdown = nbytes_breakdown
     codecs.serialize_target_cache = serialize_target_cache
     codecs.hydrate_target_cache = hydrate_target_cache
     codecs.sidecar_eligible = sidecar_eligible

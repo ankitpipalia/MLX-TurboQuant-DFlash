@@ -602,6 +602,11 @@ command = [
   "--dflash-max-ctx", "131072",
   "--prefix-cache",
   "--prefix-cache-max-entries", "1",
+  # Stated rather than inherited: above this depth DFlash skips the *prefill*
+  # snapshot, so only end-of-generation snapshots and sidecars are retained.
+  # That is the intended first-benchmark behaviour -- one packed snapshot is a
+  # second copy of the arena, so an unbounded cap doubles long-context FA KV.
+  "--max-snapshot-tokens", "32000",
   "--no-prefix-cache-l2",
   "--wired-limit", "auto",
   "--cache-limit", "2GB",

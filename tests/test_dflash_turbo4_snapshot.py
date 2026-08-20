@@ -477,3 +477,75 @@ def test_sidecar_slicing_delegates_for_native_snapshots(monkeypatch):
     )
     assert result == "delegated", "a native snapshot must reach upstream"
     assert seen["require_full_coverage"] is True, "kwargs must pass through"
+
+
+def test_packed_snapshot_is_sizeable(monkeypatch):
+    """The L1 cache sizes every snapshot it admits; upstream reads fa[0].nbytes,
+    which raises on a packed triple, so admission itself would fail."""
+    from dflash_mlx.cache.snapshot import DFlashPrefixSnapshot
+
+    _install_isolated(monkeypatch)
+    arena = _arena()
+    snapshot = _packed_snapshot(arena, tokens=16, boundary=8)
+
+    breakdown = snapshot.nbytes_breakdown()
+    assert set(breakdown) == {
+        "fa_kv",
+        "gdn_state",
+        "draft_context",
+        "last_logits",
+        "sidecar",
+    }, "keys must match upstream: callers read them individually"
+    assert breakdown["fa_kv"] > 0
+    assert snapshot.nbytes == sum(breakdown.values())
+
+    # And a native snapshot still goes through upstream's own accounting.
+    native = DFlashPrefixSnapshot(
+        token_ids=(1, 2),
+        fa_states=((mx.zeros((1, 2, 2, 8)), mx.zeros((1, 2, 2, 8)), 2),),
+        gdn_states=(None,),
+        target_hidden_chunks=(mx.zeros((1, 2, 8)),),
+        target_hidden_chunk_spans=((0, 2),),
+        target_hidden_total_len=2,
+        last_logits=mx.zeros((1, 4)),
+        key=snapshot.key,
+        kind="prefill",
+    )
+    assert native.nbytes > 0
+
+
+def test_packed_snapshot_survives_a_real_l1_cache_round_trip(monkeypatch):
+    """The integration seam: insert -> stats -> lookup -> hydrate -> append."""
+    from dflash_mlx.cache.prefix_l1 import DFlashPrefixCache
+
+    codecs_mod, _, _ = _install_isolated(monkeypatch)
+    arena = _arena(max_size=256)
+    snapshot = _packed_snapshot(arena, tokens=16, boundary=8)
+
+    cache = DFlashPrefixCache(
+        max_entries=1,
+        max_bytes=64 * 1024 * 1024,
+        max_snapshot_tokens=0,
+    )
+    assert cache.insert(snapshot) is True, "a packed snapshot must be admitted"
+
+    stats = cache.stats()
+    assert int(stats["current_bytes"]) > 0, (
+        "byte accounting must see the packed state"
+    )
+    assert int(stats["current_entries"]) == 1
+    assert int(stats["insertions"]) == 1
+    assert int(stats["skipped_too_long"]) == 0
+
+    hit_tokens, restored = cache.lookup(list(snapshot.token_ids), snapshot.key)
+    assert restored is not None, "the snapshot must be findable again"
+    assert hit_tokens > 0, "the lookup must report reusable prefix tokens"
+
+    # Hydrating into a fresh arena must reproduce the prefix and allow an append.
+    fresh = _arena(max_size=256)
+    caches = _mixed_cache(fresh)
+    rebuilt = codecs_mod.hydrate_target_cache(restored, caches)
+    assert rebuilt[1] is fresh
+    assert rebuilt[1].offset == 16
+    _fill(fresh, 4, 3.0)
+    assert fresh.offset == 20, "append must continue past the restored prefix"

@@ -1,5 +1,8 @@
 from pathlib import Path
 
+import mlx.core as mx
+import pytest
+
 from local_llm_control.config import load_settings
 from local_llm_control.dflash_compat import (
     install_dflash_turboquant,
@@ -324,6 +327,100 @@ def test_dflash_turbo4_converts_only_quantized_attention_caches(
     assert caches[1].bits == 4
     assert caches[1].max_size == 8
     monkeypatch.setattr(QwenGdnTargetOps, "make_cache", original)
+
+
+def _install_turbo4_bridge(monkeypatch, caches, max_size):
+    """Patch DFlash's cache factory and install the Turbo4 bridge over it."""
+    from dflash_mlx.engine.target_qwen_gdn import QwenGdnTargetOps
+
+    monkeypatch.setattr(
+        QwenGdnTargetOps, "make_cache", lambda self, *a, **k: list(caches)
+    )
+    monkeypatch.setenv("LOCAL_LLM_DFLASH_TURBOQUANT", "turbo4")
+    monkeypatch.setenv("LOCAL_LLM_DFLASH_TURBOQUANT_MAX_SIZE", str(max_size))
+    install_dflash_turboquant()
+    return QwenGdnTargetOps()
+
+
+class _Layer:
+    def __init__(self, is_linear: bool) -> None:
+        self.is_linear = is_linear
+
+
+class _Target:
+    """Stand-in for a loaded target model; supports weak references.
+
+    Shaped so DFlash's real ``text_wrapper``/``text_model`` helpers resolve it:
+    one full-attention layer, matching the single quantized cache the fakes
+    below hand back.
+    """
+
+    class args:
+        num_key_value_heads = 1
+        head_dim = 64
+
+    def __init__(self) -> None:
+        self.model = type("TextModel", (), {"layers": [_Layer(False)]})()
+
+
+def test_dflash_turbo4_rejects_partially_converted_cache(monkeypatch) -> None:
+    """A layout change must fail loudly, not quantize a subset of layers."""
+    from mlx_lm.models.cache import QuantizedKVCache
+
+    ops = _install_turbo4_bridge(
+        monkeypatch, [object(), QuantizedKVCache(group_size=64, bits=8)], 0
+    )
+    # Two full-attention layers, but DFlash handed back only one quantized cache.
+    target = _Target()
+    target.model.layers = [_Layer(True), _Layer(False), _Layer(False)]
+
+    with pytest.raises(RuntimeError, match="partially converted"):
+        ops.make_cache(target)
+
+
+def test_dflash_turbo4_reuses_one_arena_for_the_same_model(monkeypatch) -> None:
+    from mlx_lm.models.cache import QuantizedKVCache
+
+    ops = _install_turbo4_bridge(
+        monkeypatch, [object(), QuantizedKVCache(group_size=64, bits=8)], 8
+    )
+    target = _Target()
+
+    first = ops.make_cache(target)[1]
+    first.update_and_fetch(mx.zeros((1, 1, 2, 64)), mx.zeros((1, 1, 2, 64)))
+    assert first.offset == 2
+
+    second = ops.make_cache(target)[1]
+    assert second is first, "the fixed arena must be reused, not reallocated"
+    assert second.offset == 0, "a reused arena must restart at offset zero"
+
+
+def test_dflash_turbo4_releases_the_arena_when_a_model_is_retired(
+    monkeypatch,
+) -> None:
+    """The pool holds caches but not the model, so it must not outlive it."""
+    from dflash_mlx.engine.target_qwen_gdn import QwenGdnTargetOps
+    from mlx_lm.models.cache import QuantizedKVCache
+
+    ops = _install_turbo4_bridge(
+        monkeypatch, [object(), QuantizedKVCache(group_size=64, bits=8)], 8
+    )
+    pools = QwenGdnTargetOps.make_cache._local_llm_fixed_pools
+
+    retired = _Target()
+    retired_cache = ops.make_cache(retired)[1]
+    assert len(pools) == 1
+
+    del retired
+    fresh_cache = ops.make_cache(_Target())[1]
+
+    # Asserted on object identity rather than on the dict key, because CPython
+    # may legitimately recycle the freed address for the replacement model --
+    # which is precisely the case a bare ``id`` key would get wrong.
+    assert fresh_cache is not retired_cache, (
+        "a recycled id must not inherit the retired model's arena"
+    )
+    assert len(pools) == 1, "a retired model's arena must not accumulate"
 
 
 def test_current_dflash_nested_schema_is_normalized_without_mutation() -> None:

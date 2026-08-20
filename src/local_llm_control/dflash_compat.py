@@ -10,6 +10,7 @@ downloaded Hugging Face snapshot.
 from __future__ import annotations
 
 import os
+import weakref
 from typing import Any
 
 
@@ -41,6 +42,27 @@ def install_config_compatibility() -> None:
 
     from_dict._local_llm_schema_compat = True  # type: ignore[attr-defined]
     DFlashDraftModelArgs.from_dict = classmethod(from_dict)
+
+
+def expected_full_attention_caches(ops: Any, target_model: Any) -> int | None:
+    """Count the target's context-growing attention layers.
+
+    DFlash builds one cache per layer and only the full-attention layers get a
+    ``QuantizedKVCache``; Qwen3.8-27B has 16 of them out of 64. Returning the
+    expected count lets the bridge reject a partial conversion instead of
+    silently leaving some layers unquantized -- or, worse, reserving a fixed
+    arena for all 64 layers. ``None`` means the layer list could not be
+    inspected, in which case the caller skips the check rather than failing a
+    launch over introspection.
+    """
+    try:
+        layers = ops.text_model(target_model).layers
+        return (
+            sum(1 for layer in layers if not getattr(layer, "is_linear", False))
+            or None
+        )
+    except (AttributeError, TypeError):
+        return None
 
 
 def install_dflash_turboquant() -> None:
@@ -83,6 +105,17 @@ def install_dflash_turboquant() -> None:
     class DFlashFixedTurbo4KVCache(TurboQuantKVCache):
         def __init__(self) -> None:
             super().__init__(group_size=64, bits=4, qjl=False)
+            if self.qjl:
+                # ``update_and_fetch`` below delegates to the fixed-arena
+                # implementation, which never builds the QJL sketch/rnorm side
+                # buffers.  TurboQuant's attention wrapper then reads
+                # ``sketch is None`` and quietly uses the plain estimator, so
+                # QJL would look enabled while contributing nothing.  Fail loudly
+                # instead of silently degrading.
+                raise ValueError(
+                    "DFlashFixedTurbo4KVCache cannot serve QJL: the fixed "
+                    "arena reserves no sketch buffers"
+                )
             self.max_size = max_size
 
         reserve = FixedQuantizedKVCache.reserve
@@ -101,17 +134,48 @@ def install_dflash_turboquant() -> None:
     if getattr(current, "_local_llm_dflash_turbo4", False):
         return
 
-    fixed_pools: dict[int, dict[int, Any]] = {}
+    # Arenas are keyed by ``id`` because MLX modules subclass ``dict`` and are
+    # unhashable, so a WeakKeyDictionary is unavailable.  Each entry carries a
+    # weak reference plus the geometry it was reserved for.  The weak reference
+    # expires when the server retires a model, releasing the multi-GiB arena
+    # that would otherwise outlive it -- the pool holds the caches but not the
+    # model.  It also proves identity on a hit: CPython recycles addresses, and
+    # the server drops the previous model before loading the next, so a bare
+    # ``id`` could hand one architecture's arena to a different model.
+    fixed_pools: dict[int, tuple[Any, tuple[int, ...], dict[int, Any]]] = {}
+
+    def pool_for(target_model: Any, geometry: tuple[int, ...]) -> dict[int, Any]:
+        for stale_key, (stale_ref, _, _) in list(fixed_pools.items()):
+            if stale_ref() is None:
+                del fixed_pools[stale_key]
+        key = id(target_model)
+        entry = fixed_pools.get(key)
+        if entry is not None:
+            reference, reserved_geometry, existing_pool = entry
+            if reference() is target_model and reserved_geometry == geometry:
+                return existing_pool
+            del fixed_pools[key]
+        pool: dict[int, Any] = {}
+        fixed_pools[key] = (weakref.ref(target_model), geometry, pool)
+        return pool
 
     def make_cache(self: Any, *args: Any, **kwargs: Any) -> list[Any]:
         caches = current(self, *args, **kwargs)
+        target_model = args[0] if args else kwargs.get("target_model")
         converted = 0
-        pool_key = id(args[0] if args else kwargs.get("target_model"))
-        fixed_pool = fixed_pools.setdefault(pool_key, {})
+        fixed_pool: dict[int, Any] = {}
         text_args = None
         if max_size:
-            target_model = args[0] if args else kwargs.get("target_model")
             text_args = self.text_wrapper(target_model).args
+            fixed_pool = pool_for(
+                target_model,
+                (
+                    int(text_args.num_key_value_heads),
+                    int(text_args.head_dim),
+                    len(caches),
+                    max_size,
+                ),
+            )
         for index, cache in enumerate(caches):
             if isinstance(cache, QuantizedKVCache) and not isinstance(
                 cache, TurboQuantKVCache
@@ -143,6 +207,13 @@ def install_dflash_turboquant() -> None:
                 "DFlash Turbo4 requires --quantize-kv-cache and found no "
                 "full-attention QuantizedKVCache entries"
             )
+        expected = expected_full_attention_caches(self, target_model)
+        if expected is not None and converted != expected:
+            raise RuntimeError(
+                f"DFlash Turbo4 converted {converted} of {len(caches)} caches "
+                f"but the target reports {expected} full-attention layers; "
+                "refusing to run a partially converted cache"
+            )
         if max_size and any(cache.keys is not None for cache in fixed_pool.values()):
             mx.eval(
                 [
@@ -169,6 +240,7 @@ def install_dflash_turboquant() -> None:
 
     make_cache._local_llm_dflash_turbo4 = True  # type: ignore[attr-defined]
     make_cache._local_llm_original = current  # type: ignore[attr-defined]
+    make_cache._local_llm_fixed_pools = fixed_pools  # type: ignore[attr-defined]
     QwenGdnTargetOps.make_cache = make_cache
 
     # This wraps MLX-LM attention before the target model module is imported.

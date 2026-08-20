@@ -447,7 +447,11 @@ engine = "mlx-vlm"
 description = "RECOMMENDED: Qwen3.8 27B Q4 serial decode + Turbo4 KV; 262K ceiling and exact-prefix reuse"
 port = 8098
 health_path = "/health"
-environment = { APC_ENABLED = "1", APC_NUM_BLOCKS = "1", APC_EXACT_CACHE_ENTRIES = "1", LOCAL_LLM_ALLOW_MISSING_VISION = "1" }
+# Qwen3.8's template accepts only xhigh/medium/low and raises on anything else,
+# so an OpenAI-standard "high" or "minimal" would fail the whole request. The
+# alias map fixes that; the default replaces the template's own xhigh, which
+# spends most of the output budget thinking on this hardware.
+environment = { APC_ENABLED = "1", APC_NUM_BLOCKS = "1", APC_EXACT_CACHE_ENTRIES = "1", LOCAL_LLM_ALLOW_MISSING_VISION = "1", LOCAL_LLM_QWEN_REASONING_ALIASES = "1", LOCAL_LLM_QWEN_REASONING_DEFAULT = "medium" }
 command = [
   "{PYTHON_BIN}", "-m", "local_llm_control.mlx_vlm_text_server",
   "--model", "{QWEN38_MTP_MODEL}",
@@ -466,10 +470,10 @@ command = [
 
 [profiles.mlx-vlm-qwen38-q4-turbo4-deep]
 engine = "mlx-vlm"
-description = "EXPERIMENTAL DEEP: serial Q4 + Turbo4, 512-token cold-prefill chunks; 262K ceiling, validated locally through 32K"
+description = "PRODUCTION 250K: serial Q4 + Turbo4, 512-token cold-prefill chunks; 262K ceiling, validated locally through 32K"
 port = 8098
 health_path = "/health"
-environment = { APC_ENABLED = "1", APC_NUM_BLOCKS = "1", APC_EXACT_CACHE_ENTRIES = "1", LOCAL_LLM_ALLOW_MISSING_VISION = "1" }
+environment = { APC_ENABLED = "1", APC_NUM_BLOCKS = "1", APC_EXACT_CACHE_ENTRIES = "1", LOCAL_LLM_ALLOW_MISSING_VISION = "1", LOCAL_LLM_QWEN_REASONING_ALIASES = "1", LOCAL_LLM_QWEN_REASONING_DEFAULT = "medium" }
 command = [
   "{PYTHON_BIN}", "-m", "local_llm_control.mlx_vlm_text_server",
   "--model", "{QWEN38_MTP_MODEL}",
@@ -528,16 +532,26 @@ engine = "mlx-dflash"
 description = "EXPERIMENTAL MAX CONTEXT: Qwen3.8 27B Q4 + DFlash2 Q4 + real Turbo4 KV, native 262K ceiling"
 port = 8098
 health_path = "/v1/models"
-environment = { LOCAL_LLM_DFLASH_TURBOQUANT = "turbo4", LOCAL_LLM_DFLASH_TURBOQUANT_MAX_SIZE = "262144" }
+# The physical arena is 64 tokens larger than the logical 262,144 context.
+# DFlash appends a whole draft block to the target cache and only trims after
+# verification, so peak offset can exceed the context by up to --verify-len-cap.
+# At 18 KiB/token those 64 slots cost ~1.1 MiB against a 4.50 GiB arena.
+environment = { LOCAL_LLM_DFLASH_TURBOQUANT = "turbo4", LOCAL_LLM_DFLASH_TURBOQUANT_MAX_SIZE = "262208" }
 command = [
   "{DFLASH_BIN}", "serve",
   "--model", "{QWEN38_DFLASH2_MODEL}",
   "--draft", "{QWEN38_DFLASH2_DRAFT}",
   "--draft-quant", "none",
-  "--verify-mode", "dflash",
+  # adaptive and conservative are this fork's own defaults; the M1 has no NAX
+  # verification kernels (arch_gen 13), so a width tuned on M5 does not carry
+  # over. Sweep caps 3-5 and re-test copyspec=auto on a real OpenCode trace.
+  "--verify-mode", "adaptive",
   "--verify-len-cap", "4",
-  "--copyspec-mode", "auto",
-  "--prefill-step-size", "96",
+  "--copyspec-mode", "conservative",
+  # 96 measured ~50 prompt tok/s here: 2,731 chunks at 262K, or ~82 minutes for
+  # a full cold prefill. Upstream defaults to 2048; drop toward 256 only if a
+  # near-262K cold prompt cannot otherwise fit.
+  "--prefill-step-size", "512",
   "--draft-sink-size", "64",
   "--draft-window-size", "2048",
   "--draft-full-context-min-ctx", "16384",

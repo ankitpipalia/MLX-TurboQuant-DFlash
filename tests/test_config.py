@@ -283,13 +283,23 @@ def test_qwen38_dflash2_profile_uses_quantized_matched_pair(
         "mlx-dflash2-qwen38-q4-turbo4-262k"
     ]
     assert dict(turbo4.environment)["LOCAL_LLM_DFLASH_TURBOQUANT"] == "turbo4"
-    assert dict(turbo4.environment)[
-        "LOCAL_LLM_DFLASH_TURBOQUANT_MAX_SIZE"
-    ] == "262144"
     assert "--quantize-kv-cache" in turbo4.command
     assert "--no-prefix-cache" in turbo4.command
-    assert turbo4.command[turbo4.command.index("--dflash-max-ctx") + 1] == "262144"
-    assert turbo4.command[turbo4.command.index("--prefill-step-size") + 1] == "96"
+
+    # The physical arena must exceed the logical context: DFlash appends a whole
+    # draft block before trimming, so peak offset can overshoot by up to the
+    # verify cap. Equal sizes make that overshoot a hard mid-stream ValueError.
+    arena = int(dict(turbo4.environment)["LOCAL_LLM_DFLASH_TURBOQUANT_MAX_SIZE"])
+    logical = int(turbo4.command[turbo4.command.index("--dflash-max-ctx") + 1])
+    verify_cap = int(turbo4.command[turbo4.command.index("--verify-len-cap") + 1])
+    assert arena >= logical + verify_cap, (
+        f"arena {arena} leaves no room for a {verify_cap}-token overshoot past "
+        f"the {logical}-token context"
+    )
+
+    # 96 measured ~50 prompt tok/s (~82 min for a full cold 262K prefill).
+    prefill = int(turbo4.command[turbo4.command.index("--prefill-step-size") + 1])
+    assert prefill >= 256, f"prefill chunk {prefill} is pathologically small"
 
 
 def test_dflash_turbo4_converts_only_quantized_attention_caches(

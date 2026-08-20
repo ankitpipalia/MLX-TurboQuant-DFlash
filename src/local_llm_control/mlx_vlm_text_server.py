@@ -130,6 +130,75 @@ def install_reasoning_strength_bridge() -> None:
     GenerationArguments.to_template_kwargs = with_reasoning_strength
 
 
+QWEN_REASONING_LEVELS = ("xhigh", "medium", "low")
+_QWEN_REASONING_ALIASES = {
+    "minimal": "low",
+    "none": "low",
+    "off": "low",
+    "high": "xhigh",
+    "max": "xhigh",
+    "maximum": "xhigh",
+}
+
+
+def normalize_qwen_reasoning_effort(effort: Any) -> Any:
+    """Translate OpenAI reasoning vocabulary into Qwen3.8's accepted set.
+
+    Qwen3.8's chat template accepts only ``xhigh``, ``medium`` and ``low``, and
+    calls ``raise_exception`` on anything else -- so a client sending the
+    OpenAI-standard ``high`` or ``minimal`` fails the entire request rather
+    than degrading. Map the well-known aliases; pass anything unrecognized
+    through so a genuine typo still surfaces instead of being silently
+    reinterpreted as a valid level.
+    """
+    if effort is None:
+        return None
+    lowered = str(effort).strip().lower()
+    if lowered in QWEN_REASONING_LEVELS:
+        return lowered
+    return _QWEN_REASONING_ALIASES.get(lowered, effort)
+
+
+def install_qwen_reasoning_normalizer() -> None:
+    """Alias OpenAI reasoning levels, and optionally pick a default level.
+
+    Opt-in via ``LOCAL_LLM_QWEN_REASONING_ALIASES=1`` so the Muse/Onyx
+    profiles, whose template reads a different vocabulary, are unaffected.
+    ``LOCAL_LLM_QWEN_REASONING_DEFAULT`` overrides the template's own default
+    of ``xhigh``, which otherwise spends most of the output budget thinking on
+    this hardware.
+    """
+    if os.getenv("LOCAL_LLM_QWEN_REASONING_ALIASES", "").strip() != "1":
+        return
+    default = (
+        os.getenv("LOCAL_LLM_QWEN_REASONING_DEFAULT", "").strip().lower() or None
+    )
+    if default is not None and default not in QWEN_REASONING_LEVELS:
+        raise ValueError(
+            "LOCAL_LLM_QWEN_REASONING_DEFAULT must be one of "
+            f"{', '.join(QWEN_REASONING_LEVELS)}"
+        )
+
+    from mlx_vlm.server.generation import GenerationArguments
+
+    original = GenerationArguments.to_template_kwargs
+    if getattr(original, "_local_llm_qwen_reasoning", False):
+        return
+
+    def with_normalized_reasoning(self: Any) -> dict:
+        kwargs = original(self)
+        effort = normalize_qwen_reasoning_effort(kwargs.get("reasoning_effort"))
+        if effort is None:
+            effort = default
+        if effort is not None:
+            kwargs["reasoning_effort"] = effort
+        return kwargs
+
+    with_normalized_reasoning._local_llm_qwen_reasoning = True  # type: ignore[attr-defined]
+    with_normalized_reasoning._local_llm_original = original  # type: ignore[attr-defined]
+    GenerationArguments.to_template_kwargs = with_normalized_reasoning
+
+
 def install_compressed_turboquant_apc_bridge() -> None:
     """Keep exact-prefix snapshots compressed when TurboQuant KV is active.
 
@@ -214,6 +283,7 @@ def install_compressed_turboquant_apc_bridge() -> None:
 def main() -> None:
     install_text_first_loader()
     install_reasoning_strength_bridge()
+    install_qwen_reasoning_normalizer()
     install_compressed_turboquant_apc_bridge()
     from mlx_vlm.server.cli import main as server_main
 

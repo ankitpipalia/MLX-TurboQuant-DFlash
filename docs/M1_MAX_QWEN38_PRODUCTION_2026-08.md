@@ -165,28 +165,36 @@ changes rather than silently computing `Q·R(K)ᵀ`.
   misconfigured client is still exposed.
 - **DFlash2 + Turbo4 prefix reuse is implemented but unmeasured.**
   `mlx-dflash2-qwen38-q4-turbo4-cached` pairs compressed KV with exact prefix
-  reuse at 128K, L1 only. It is correctness-tested but has **no throughput or
-  retrieval numbers yet**, so serial + APC remains the production path until it
-  is benchmarked against an append trace. L2 disk snapshots and generation
-  sidecars are still unimplemented — the L2 schema stores one array per side and
-  a write fails closed, and `sidecar_eligible` excludes quantized caches, which
-  caps reuse at the cold-prompt frontier rather than following the conversation.
+  reuse at 128K, including generation sidecars so reuse follows the
+  conversation rather than stopping at the cold prompt. It is correctness-tested
+  end to end, but has **no throughput or retrieval numbers yet**, so serial +
+  APC remains the production path until it is benchmarked against a real append
+  trace. **L2 disk snapshots are deliberately not implemented**: the on-disk
+  schema stores one array per side and cannot carry a packed triple, so a write
+  fails closed naming `--no-prefix-cache-l2`. L1 covers the single-session case,
+  and the schema reader deletes files on version mismatch, which makes a
+  half-validated bump worse than not having one.
 - `mlx-lm` is pinned `>=0.31.3` while we monkeypatch its internals. Pin it
   exactly and upgrade deliberately with a parity run.
 - ~2.6 GiB of stale `.incomplete` downloads sit in
   `EigenLabs--Qwen3.8-27B-4bit/.cache`, reclaimable.
 
-## Known-bad in the pinned DFlash revision
+## Sampling options the speculative path drops
 
 `serve.py` parses `repetition_penalty`, `presence_penalty`, `frequency_penalty`,
 `xtc_probability`, `xtc_threshold`, `logit_bias`, `logprobs` and `top_logprobs`
 from the request body, but `runtime.py` forwards only `temperature`, `top_p`,
 `top_k` and `min_p`, and `stream_dflash_generate_impl` accepts only those four.
-So on the DFlash path those parameters are **accepted and silently ignored** —
-not rejected, not honoured. Only the experimental DFlash profiles are affected;
-the serial mlx-vlm production path does not go through that engine. Any request
-setting them should be routed to target-only AR before the DFlash server can be
-called OpenCode-ready.
+On the speculative path the rest were therefore **accepted and silently
+ignored** — not rejected, not honoured.
+
+Requests using any of them are now routed to exact autoregressive decode on the
+target, by dropping the draft model for the request and delegating to mlx-lm's
+own handler, which does honour them. That is the same mechanism upstream's
+`--fastpath-max-tokens` option uses. Ordinary non-greedy sampling keeps the
+speculative path, since those four parameters really are forwarded, and a
+neutral `repetition_penalty` of 1.0 is not treated as a request so speculation
+is not lost for a no-op. Disable with `LOCAL_LLM_DFLASH_EXACT_SAMPLING=0`.
 
 ## Reproducing the environment
 

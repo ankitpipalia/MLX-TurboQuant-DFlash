@@ -53,6 +53,17 @@ _CODEC_CONSUMERS = (
     "dflash_mlx.cache.prefix_l1",
     "dflash_mlx.server.prefix_cache_flow",
 )
+_REBOUND_CODEC_NAMES = (
+    "hydrate_target_cache",
+    "build_prefix_key",
+    "sidecar_eligible",
+    "slice_snapshot_at_sidecar_boundary",
+)
+
+
+def is_packed_state(state: Any) -> bool:
+    """True for a Turbo4 FA state, whose K/V slots hold packed triples."""
+    return state is not None and isinstance(state[0], tuple)
 
 
 def snapshots_enabled() -> bool:
@@ -175,6 +186,8 @@ def install_turbo4_prefix_snapshots() -> None:
     original_hydrate = codecs.hydrate_target_cache
     original_build_key = prefix_cache_manager.build_prefix_key
     original_l2_serialize = prefix_l2._serialize
+    original_sidecar_eligible = codecs.sidecar_eligible
+    original_slice = codecs.slice_snapshot_at_sidecar_boundary
 
     def serialize_target_cache(target_cache: list[Any], *, clone: bool = True):
         if not any(isinstance(e, TurboQuantKVCache) for e in target_cache):
@@ -239,6 +252,92 @@ def install_turbo4_prefix_snapshots() -> None:
         key = original_build_key(*args, **kwargs)
         return replace(key, format_version=_active_format_version())
 
+    def sidecar_eligible(target_cache: list[Any]) -> bool:
+        """Admit the one quantized cache whose packed state we can slice.
+
+        Upstream tests ``isinstance(entry, KVCache)``, and ``QuantizedKVCache``
+        is a sibling rather than a subclass, so a Turbo4 cache silently
+        disabled generation sidecars -- capping reuse at the cold-prompt
+        frontier instead of following the conversation. Deliberately narrow:
+        any other quantized layout stays ineligible.
+        """
+        if not any(isinstance(e, TurboQuantKVCache) for e in target_cache):
+            return original_sidecar_eligible(target_cache)
+        return all(
+            isinstance(entry, (TurboQuantKVCache, RecurrentRollbackCache))
+            for entry in target_cache
+        )
+
+    def slice_snapshot_at_sidecar_boundary(
+        snapshot: Any, *, require_full_coverage: bool = False
+    ):
+        if not any(is_packed_state(s) for s in snapshot.fa_states):
+            return original_slice(
+                snapshot, require_full_coverage=require_full_coverage
+            )
+
+        from dflash_mlx.cache.codecs import snapshot_covers_prefix
+        from dflash_mlx.cache.snapshot import DFlashPrefixSnapshot
+
+        boundary = int(snapshot.sidecar_boundary)
+        if not 0 < boundary < snapshot.prefix_len:
+            raise ValueError(
+                f"Sidecar boundary {boundary} outside (0, {snapshot.prefix_len})"
+            )
+        if (
+            snapshot.sidecar_gdn_states is None
+            or snapshot.sidecar_last_logits is None
+        ):
+            raise ValueError("Snapshot has a sidecar boundary but no sidecar states")
+        if require_full_coverage and not snapshot_covers_prefix(snapshot, boundary):
+            raise ValueError(
+                f"Snapshot feature spans do not cover sidecar boundary {boundary}"
+            )
+
+        fa: list[Any] = []
+        for layer_idx, state in enumerate(snapshot.fa_states):
+            if state is None:
+                fa.append(None)
+                continue
+            if len(state) != 3:
+                raise ValueError(
+                    f"FA state at layer {layer_idx} is not boundary-sliceable"
+                )
+            keys, values, _offset = state
+            # Scales and biases are grouped along the last axis, never the token
+            # axis, so slicing axis 2 is valid for every packed component.
+            fa.append(
+                (
+                    tuple(part[:, :, :boundary, :] for part in keys),
+                    tuple(part[:, :, :boundary, :] for part in values),
+                    boundary,
+                )
+            )
+
+        chunks: list[Any] = []
+        spans: list[tuple[int, int]] = []
+        for chunk, (start, end) in zip(
+            snapshot.target_hidden_chunks, snapshot.target_hidden_chunk_spans
+        ):
+            if start >= boundary:
+                continue
+            keep = min(end, boundary) - start
+            chunks.append(chunk[:, :keep, :])
+            spans.append((start, start + keep))
+
+        return DFlashPrefixSnapshot(
+            token_ids=snapshot.token_ids[:boundary],
+            fa_states=tuple(fa),
+            gdn_states=snapshot.sidecar_gdn_states,
+            target_hidden_chunks=tuple(chunks),
+            target_hidden_chunk_spans=tuple(spans),
+            target_hidden_total_len=boundary,
+            last_logits=snapshot.sidecar_last_logits,
+            key=snapshot.key,
+            kind="prefill",
+            created_at=snapshot.created_at,
+        )
+
     def _serialize(snapshot: Any):
         for state in snapshot.fa_states:
             if state is not None and isinstance(state[0], tuple):
@@ -257,17 +356,28 @@ def install_turbo4_prefix_snapshots() -> None:
 
     codecs.serialize_target_cache = serialize_target_cache
     codecs.hydrate_target_cache = hydrate_target_cache
+    codecs.sidecar_eligible = sidecar_eligible
+    codecs.slice_snapshot_at_sidecar_boundary = slice_snapshot_at_sidecar_boundary
     prefix_cache_manager.build_prefix_key = build_prefix_key
     prefix_l2._serialize = _serialize
 
-    for name in _CODEC_CONSUMERS:
-        module = sys.modules.get(name)
+    replacements = {
+        "hydrate_target_cache": (original_hydrate, hydrate_target_cache),
+        "build_prefix_key": (original_build_key, build_prefix_key),
+        "sidecar_eligible": (original_sidecar_eligible, sidecar_eligible),
+        "slice_snapshot_at_sidecar_boundary": (
+            original_slice,
+            slice_snapshot_at_sidecar_boundary,
+        ),
+    }
+    for module_name in _CODEC_CONSUMERS:
+        module = sys.modules.get(module_name)
         if module is None:
             continue
-        if getattr(module, "hydrate_target_cache", None) is original_hydrate:
-            module.hydrate_target_cache = hydrate_target_cache
-        if getattr(module, "build_prefix_key", None) is original_build_key:
-            module.build_prefix_key = build_prefix_key
+        for name in _REBOUND_CODEC_NAMES:
+            previous, current = replacements[name]
+            if getattr(module, name, None) is previous:
+                setattr(module, name, current)
 
 
 _format_version_override: int | None = None

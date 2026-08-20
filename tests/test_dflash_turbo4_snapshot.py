@@ -353,3 +353,127 @@ def test_launcher_wiring_registers_the_format_and_patches_the_codec(monkeypatch)
     assert getattr(
         codecs.serialize_target_cache, "_local_llm_turbo4_snapshots", False
     ), "codec was not patched"
+
+
+def test_sidecar_becomes_eligible_only_for_the_supported_turbo4_layout(monkeypatch):
+    """Without this, reuse stops at the cold-prompt frontier every turn."""
+    from dflash_mlx.cache import codecs
+    from mlx_lm.models.cache import QuantizedKVCache
+
+    codecs_mod, _, _ = _install_isolated(monkeypatch)
+    arena = _arena()
+    _fill(arena, 8, 1.0)
+
+    assert codecs_mod.sidecar_eligible(_mixed_cache(arena)) is True
+
+    # Any other quantized layout stays ineligible: we can only slice ours.
+    assert codecs_mod.sidecar_eligible(
+        [QuantizedKVCache(group_size=64, bits=8)]
+    ) is False
+    # And a Turbo4 cache mixed with an unsupported entry is rejected wholesale.
+    assert codecs_mod.sidecar_eligible([object(), arena]) is False
+    assert codecs is codecs_mod
+
+
+def _packed_snapshot(arena, tokens: int, boundary: int):
+    from dflash_mlx.cache.snapshot import DFlashPrefixSnapshot
+    from dflash_mlx.cache.fingerprints import DFlashPrefixKey
+
+    _fill(arena, tokens, 1.0)
+    state = capture_turbo4_state(arena)
+    key = DFlashPrefixKey(
+        target_model_id="t",
+        draft_model_id="d",
+        capture_layer_ids=(1,),
+        draft_sink_size=64,
+        draft_window_size=2048,
+        template_hash="h",
+        prompt_policy_hash="p",
+    )
+    return DFlashPrefixSnapshot(
+        token_ids=tuple(range(tokens)),
+        fa_states=(None, state),
+        gdn_states=(( mx.zeros((1, 2, 4)),), None),
+        target_hidden_chunks=(mx.zeros((1, tokens, 8)),),
+        target_hidden_chunk_spans=((0, tokens),),
+        target_hidden_total_len=tokens,
+        last_logits=mx.zeros((1, 16)),
+        key=key,
+        kind="prefill",
+        sidecar_boundary=boundary,
+        sidecar_gdn_states=((mx.ones((1, 2, 4)),), None),
+        sidecar_last_logits=mx.ones((1, 16)),
+    )
+
+
+def test_sidecar_slicing_trims_every_packed_component(monkeypatch):
+    codecs_mod, _, _ = _install_isolated(monkeypatch)
+    arena = _arena()
+    snapshot = _packed_snapshot(arena, tokens=32, boundary=16)
+
+    sliced = codecs_mod.slice_snapshot_at_sidecar_boundary(snapshot)
+
+    assert sliced.prefix_len == 16
+    assert len(sliced.token_ids) == 16
+    state = sliced.fa_states[1]
+    assert state[2] == 16
+    for part in (*state[0], *state[1]):
+        assert int(part.shape[2]) == 16, (
+            "every packed component must be trimmed to the boundary"
+        )
+    # The recurrent state is replaced by the sidecar capture, not sliced.
+    assert sliced.gdn_states is snapshot.sidecar_gdn_states
+
+
+def test_sidecar_slicing_rejects_an_out_of_range_boundary(monkeypatch):
+    codecs_mod, _, _ = _install_isolated(monkeypatch)
+    arena = _arena()
+    snapshot = _packed_snapshot(arena, tokens=32, boundary=64)
+
+    with pytest.raises(ValueError, match="outside"):
+        codecs_mod.slice_snapshot_at_sidecar_boundary(snapshot)
+
+
+def test_sidecar_slicing_delegates_for_native_snapshots(monkeypatch):
+    """Native snapshots must keep upstream's exact slicing behaviour."""
+    from types import SimpleNamespace
+
+    from dflash_mlx.cache import codecs as codecs_module, prefix_l2
+    from dflash_mlx.server import prefix_cache_manager
+
+    import local_llm_control.dflash_turbo4_snapshot as snap
+
+    seen = {}
+
+    def stub_original(snapshot, *, require_full_coverage=False):
+        seen["require_full_coverage"] = require_full_coverage
+        return "delegated"
+
+    monkeypatch.setenv("LOCAL_LLM_DFLASH_TURBOQUANT_SNAPSHOTS", "1")
+    monkeypatch.setattr(snap, "_format_version_override", 0x54ABCDEF)
+    for module, name in (
+        (codecs_module, "serialize_target_cache"),
+        (codecs_module, "hydrate_target_cache"),
+        (codecs_module, "sidecar_eligible"),
+        (prefix_l2, "_serialize"),
+        (prefix_cache_manager, "build_prefix_key"),
+    ):
+        monkeypatch.setattr(module, name, getattr(module, name))
+    # Install over a stub so delegation is observable.
+    monkeypatch.setattr(
+        codecs_module, "slice_snapshot_at_sidecar_boundary", stub_original
+    )
+
+    snap.install_turbo4_prefix_snapshots()
+
+    native = SimpleNamespace(
+        fa_states=(
+            None,
+            (mx.zeros((1, 2, 4, 8)), mx.zeros((1, 2, 4, 8)), 4),
+        )
+    )
+    result = codecs_module.slice_snapshot_at_sidecar_boundary(
+        native, require_full_coverage=True
+    )
+    assert result == "delegated", "a native snapshot must reach upstream"
+    assert seen["require_full_coverage"] is True, "kwargs must pass through"

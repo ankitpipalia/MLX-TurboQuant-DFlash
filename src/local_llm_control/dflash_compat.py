@@ -13,6 +13,7 @@ import os
 import weakref
 from typing import Any
 
+from .dflash_sampling_guard import install_exact_sampling_guard
 from .dflash_turbo4_snapshot import install_turbo4_prefix_snapshots
 
 
@@ -251,6 +252,9 @@ def main() -> None:
     # After the cache bridge, which registers the format identity the prefix key
     # is stamped with, and before the CLI imports the codec's consumers.
     install_turbo4_prefix_snapshots()
+    # Last: importing the serve module pulls in codec consumers, which must bind
+    # the patched functions above rather than the originals.
+    install_exact_sampling_guard()
     from dflash_mlx.cli import main as upstream_main
 
     upstream_main()

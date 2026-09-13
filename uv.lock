@@ -542,7 +542,7 @@ dev = [
     { name = "pytest", specifier = ">=8.4" },
 ]
 dflash = [{ name = "dflash-mlx", git = "https://github.com/jundot/dflash-mlx.git?rev=c55324c86540c369f6818a0f47eae544d405475b" }]
-dspark = [{ name = "mlx-dspark", specifier = "==0.8.1" }]
+dspark = [{ name = "mlx-dspark", specifier = "==0.19.0" }]
 
 [[package]]
 name = "markdown-it-py"
@@ -724,7 +724,7 @@ wheels = [
 
 [[package]]
 name = "mlx-dspark"
-version = "0.8.1"
+version = "0.19.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "huggingface-hub" },
@@ -733,9 +733,9 @@ dependencies = [
     { name = "mlx-vlm" },
     { name = "numpy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/20/bc/3ec354673382ef65a8da9e0caad2765f278bb72426b71496e68d1110f033/mlx_dspark-0.8.1.tar.gz", hash = "sha256:48b521e73fd2cb16451c213509b3dc11f829f0817b19389bdca1222869dd63e1", size = 279222, upload-time = "2026-08-12T18:24:09.224Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/62/e4/c8fc966457df578e05e8c8e15cc841a30134ac7109408c5afdca5ff1cd9a/mlx_dspark-0.19.0.tar.gz", hash = "sha256:21d672394af8730eddaeab140a95914cecccf6f874d4752d2be11f20704cd0c7", size = 527959, upload-time = "2026-09-10T14:44:00.77Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f1/4a/b3a77696929563c6f3ac8cb0d0d586c014d958827dbf0ae57cf71b0f4d88/mlx_dspark-0.8.1-py3-none-any.whl", hash = "sha256:b4b39197f6e7466a1d44bdbee02508f68c4df619df8730b2242342797d98a66d", size = 184209, upload-time = "2026-08-12T18:24:07.595Z" },
+    { url = "https://files.pythonhosted.org/packages/d0/dc/d6e782f9e4f416d7869eaabd8dc98dbf9c57516d27c148a9c06aaaab5980/mlx_dspark-0.19.0-py3-none-any.whl", hash = "sha256:9c5acc7af042870863d8d70c6662abc952ec1cf096bd2aba4b572075b4d8a425", size = 327817, upload-time = "2026-09-10T14:43:57.604Z" },
 ]
 
 [[package]]

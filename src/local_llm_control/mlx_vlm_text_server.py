@@ -199,15 +199,47 @@ def install_qwen_reasoning_normalizer() -> None:
     GenerationArguments.to_template_kwargs = with_normalized_reasoning
 
 
+def upstream_keeps_apc_packed() -> bool:
+    """True when mlx-vlm snapshots TurboQuant caches without dequantizing.
+
+    mlx-vlm 0.7.0 (PR #2090) gave quantized caches an explicit snapshot
+    contract that ``clone_cache_entry`` consults *before* the float fallback,
+    which is now labelled legacy. When that contract is present upstream does
+    natively, and keeps maintained, what the bridge below hand-rolled.
+    """
+    try:
+        from mlx_vlm import apc_adapters
+        from mlx_vlm.turboquant import TurboQuantKVCache
+    except ImportError:
+        return False
+    probe = getattr(apc_adapters, "_has_explicit_snapshot_contract", None)
+    if probe is None:
+        return False
+    try:
+        return bool(probe(TurboQuantKVCache(bits=4)))
+    except Exception:
+        return False
+
+
 def install_compressed_turboquant_apc_bridge() -> None:
     """Keep exact-prefix snapshots compressed when TurboQuant KV is active.
 
-    Upstream APC deliberately normalizes any cache exposing
-    ``dequantize_for_apc`` to a float ``KVCache``. That is conservative, but a
-    Qwen3.8 32K snapshot expands to several GiB and makes long-context reuse
-    impossible on a 32 GiB Mac. TurboQuant's state tree is independently
-    copyable, so retain that tree and rebuild the one-row batch cache directly.
+    Older mlx-vlm normalized any cache exposing ``dequantize_for_apc`` to a
+    float ``KVCache``. That was conservative, but a Qwen3.8 32K snapshot
+    expanded to several GiB and made long-context reuse impossible on a 32 GiB
+    Mac -- measured here as a 30.87 GB peak against 22.04 GB once packed.
+    TurboQuant's state tree is independently copyable, so retain that tree and
+    rebuild the one-row batch cache directly.
+
+    Self-retiring: mlx-vlm 0.7.0 implements this natively, so on a release that
+    carries the snapshot contract this installs nothing. Patching anyway would
+    intercept ``clone_cache_entry`` ahead of the upstream path and quietly
+    substitute this copy for the maintained one, which also handles fractional
+    bit widths and feeds the new disk-backed APC.
     """
+    if upstream_keeps_apc_packed():
+        return
+
     from mlx_vlm import apc_adapters
     from mlx_vlm.turboquant import (
         BatchTurboQuantKVCache,

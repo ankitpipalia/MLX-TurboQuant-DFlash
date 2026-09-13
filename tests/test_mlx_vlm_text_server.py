@@ -120,3 +120,52 @@ def test_qwen_reasoning_default_must_be_a_level_qwen_accepts(monkeypatch) -> Non
 
     with pytest.raises(ValueError, match="must be one of"):
         text_server.install_qwen_reasoning_normalizer()
+
+
+def test_apc_bridge_retires_when_upstream_keeps_snapshots_packed(monkeypatch):
+    """Patching over a native implementation is worse than not patching.
+
+    mlx-vlm 0.7.0 gave quantized caches an explicit snapshot contract that
+    clone_cache_entry consults before the legacy float fallback. Installing the
+    bridge anyway would intercept ahead of it and substitute our copy for the
+    maintained one, which also handles fractional bit widths and feeds the
+    disk-backed APC.
+    """
+    from mlx_vlm import apc_adapters
+
+    original_clone = apc_adapters.clone_cache_entry
+    monkeypatch.setattr(apc_adapters, "clone_cache_entry", original_clone)
+    monkeypatch.setattr(apc_adapters, "merge_cache_entries", apc_adapters.merge_cache_entries)
+
+    monkeypatch.setattr(text_server, "upstream_keeps_apc_packed", lambda: True)
+    text_server.install_compressed_turboquant_apc_bridge()
+    assert apc_adapters.clone_cache_entry is original_clone, (
+        "bridge must not intercept when upstream already keeps snapshots packed"
+    )
+
+    monkeypatch.setattr(text_server, "upstream_keeps_apc_packed", lambda: False)
+    text_server.install_compressed_turboquant_apc_bridge()
+    assert getattr(
+        apc_adapters.clone_cache_entry, "_local_llm_turboquant_compressed", False
+    ), "bridge must still install on a release without the contract"
+
+
+def test_installed_mlx_vlm_keeps_turboquant_snapshots_packed():
+    """Guards the assumption the retirement rests on, against the real release."""
+    import mlx.core as mx
+    from mlx_vlm import apc_adapters
+    from mlx_vlm.turboquant import TurboQuantKVCache
+
+    assert text_server.upstream_keeps_apc_packed() is True
+
+    cache = TurboQuantKVCache(bits=4)
+    cache.update_and_fetch(
+        mx.zeros((1, 2, 8, 64), dtype=mx.bfloat16),
+        mx.zeros((1, 2, 8, 64), dtype=mx.bfloat16),
+    )
+    clone = apc_adapters.clone_cache_entry(
+        cache, min_capacity_tokens=0, eval_targets=[]
+    )
+    assert isinstance(clone, TurboQuantKVCache), (
+        "upstream dequantized to float; the bridge should not have retired"
+    )

@@ -2,21 +2,21 @@
 
 ``serve.py`` parses ``repetition_penalty``, ``presence_penalty``,
 ``frequency_penalty``, ``xtc_probability``, ``xtc_threshold``, ``logit_bias``,
-``logprobs`` and ``top_logprobs`` off the request body, but the runtime forwards
-only ``temperature``/``top_p``/``top_k``/``min_p`` and
-``stream_dflash_generate_impl`` accepts only those four. Everything else is
-therefore accepted and quietly ignored -- not rejected, not applied -- so a
-client asking for a repetition penalty or logprobs gets output that silently
-disregards it.
+``logprobs`` and ``top_logprobs`` off the request body, but only a subset ever
+reaches ``stream_dflash_generate_impl``. The remainder are accepted and quietly
+ignored -- not rejected, not applied -- so a client asking for them gets output
+that silently disregards the request.
 
-Rather than reimplement those features inside the speculative loop, route such
-requests to plain autoregressive decode on the target, which is mlx-lm's own
-server path and does honour them. That is exactly the mechanism the upstream
+As of dflash-mlx 0.1.10+omlx.7 the speculative loop handles ``temperature``,
+``top_p``, ``top_k``, ``min_p`` and ``repetition_penalty`` itself, so those keep
+the fast path. Still dropped: the presence and frequency penalties, XTC,
+``logit_bias`` and logprobs.
+
+Rather than reimplement those inside the speculative loop, route such requests
+to plain autoregressive decode on the target, which is mlx-lm's own server path
+and does honour them. That is exactly the mechanism the upstream
 ``--fastpath-max-tokens`` option already uses: drop the draft model for the
 duration of the request and delegate to the parent handler.
-
-Note that temperature, top_p, top_k and min_p *are* forwarded, so ordinary
-non-greedy sampling still gets the speculative path.
 """
 
 from __future__ import annotations
@@ -32,11 +32,10 @@ _GUARD_ENV = "LOCAL_LLM_DFLASH_EXACT_SAMPLING"
 # ``args.logits`` (LogitsProcessorArguments) and XTC on ``args.sampling``
 # (SamplingArguments), while logprobs stays top level. Read the nested holder
 # first and fall back to a flat attribute, so this keeps working whichever shape
-# a given mlx-lm release hands over. A repetition penalty of 1.0 is the
-# conventional no-op and counts as unset, so a client sending the neutral value
-# does not needlessly lose speculative decoding.
+# a given mlx-lm release hands over. repetition_penalty is deliberately absent:
+# the runtime now applies it itself (engine/sampling.py::apply_repetition_penalty),
+# so diverting those requests would throw away speculation for nothing.
 _NEUTRAL_PENALTIES = (
-    ("logits", "repetition_penalty", (0.0, 1.0)),
     ("logits", "presence_penalty", (0.0,)),
     ("logits", "frequency_penalty", (0.0,)),
     ("sampling", "xtc_probability", (0.0,)),

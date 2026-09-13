@@ -33,7 +33,7 @@ testpaths = ["tests"]
 mlx-vlm = { git = "https://github.com/Blaizzy/mlx-vlm.git", rev = "7ee8eba362e9c462712dbb7294e9c85e15b66720" }
 mlx-turboquant = { git = "https://github.com/pythongiant/mlx_turboquant.git", rev = "0846d6aac9e3720a59de7a52782a9af63ad0146f" }
 turboquant-mlx = { git = "https://github.com/arozanov/turboquant-mlx.git", rev = "6e928d715595dee9f6b6cc3968baa44e1f408d28" }
-dflash-mlx = { git = "https://github.com/jundot/dflash-mlx.git", rev = "b7f625504a733216d9e06caa3f7847a048241d94" }
+dflash-mlx = { git = "https://github.com/jundot/dflash-mlx.git", rev = "c55324c86540c369f6818a0f47eae544d405475b" }
 
 [dependency-groups]
 dev = ["httpx2==2.10.0", "pytest>=8.4"]

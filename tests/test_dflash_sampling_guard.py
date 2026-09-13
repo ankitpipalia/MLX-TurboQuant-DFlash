@@ -39,12 +39,11 @@ def test_ordinary_sampling_keeps_the_speculative_path():
     assert unsupported_sampling_reasons(_args(temp=1.0, top_p=0.95)) == []
 
 
-def test_neutral_repetition_penalty_is_not_treated_as_a_request():
-    """1.0 is the conventional no-op; losing speculation for it is waste."""
+def test_repetition_penalty_is_supported_upstream_now():
+    """dflash-mlx 0.1.10+omlx.7 applies it inside the speculative loop, so
+    diverting these requests to exact AR would waste speculation."""
     assert unsupported_sampling_reasons(_args(repetition_penalty=1.0)) == []
-    assert unsupported_sampling_reasons(_args(repetition_penalty=1.1)) == [
-        "repetition_penalty"
-    ]
+    assert unsupported_sampling_reasons(_args(repetition_penalty=1.1)) == []
 
 
 def test_every_dropped_feature_is_detected():
@@ -223,7 +222,7 @@ def test_real_generation_arguments_nested_penalties_are_detected():
     ) == ["frequency_penalty"]
     assert unsupported_sampling_reasons(
         _real_args(repetition_penalty=1.2)
-    ) == ["repetition_penalty"]
+    ) == [], "now handled natively by the speculative runtime"
     assert unsupported_sampling_reasons(
         _real_args(logit_bias={"7": 3.0})
     ) == ["logit_bias"]

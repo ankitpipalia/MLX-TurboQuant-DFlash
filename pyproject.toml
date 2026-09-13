@@ -7,7 +7,7 @@ dependencies = [
   "fastapi>=0.116",
   "httpx>=0.28",
   "mlx-lm>=0.31.3",
-  "mlx-vlm==0.6.13",
+  "mlx-vlm",
   "mlx-turboquant",
   "psutil>=7.0",
   "turboquant-mlx",
@@ -30,7 +30,7 @@ pythonpath = ["src"]
 testpaths = ["tests"]
 
 [tool.uv.sources]
-mlx-vlm = { git = "https://github.com/Blaizzy/mlx-vlm.git", rev = "7ee8eba362e9c462712dbb7294e9c85e15b66720" }
+mlx-vlm = { git = "https://github.com/Blaizzy/mlx-vlm.git", rev = "45d6e125ab174cc279edea417f6be734870ff161" }
 mlx-turboquant = { git = "https://github.com/pythongiant/mlx_turboquant.git", rev = "0846d6aac9e3720a59de7a52782a9af63ad0146f" }
 turboquant-mlx = { git = "https://github.com/arozanov/turboquant-mlx.git", rev = "6e928d715595dee9f6b6cc3968baa44e1f408d28" }
 dflash-mlx = { git = "https://github.com/jundot/dflash-mlx.git", rev = "c55324c86540c369f6818a0f47eae544d405475b" }

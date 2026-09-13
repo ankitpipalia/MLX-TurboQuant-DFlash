@@ -169,8 +169,17 @@ def test_qwen38_native_mtp_profiles_are_pinned_and_bounded(
         assert command[command.index("--max-num-seqs") + 1] == "1"
         assert command[command.index("--max-kv-size") + 1] == "262144"
         assert command[command.index("--vision-cache-size") + 1] == "0"
-        assert dict(profile.environment)["APC_EXACT_CACHE_ENTRIES"] == "1"
-        assert dict(profile.environment)["LOCAL_LLM_ALLOW_MISSING_VISION"] == "1"
+        environment = dict(profile.environment)
+        # More than one entry so a short auxiliary request -- OpenCode's title
+        # call, say -- cannot evict the live conversation's prefix and force a
+        # cold prefill every turn. Safe now only because mlx-vlm 0.7.0 bounds
+        # APC retention itself, so the budget must be stated alongside it.
+        assert int(environment["APC_EXACT_CACHE_ENTRIES"]) >= 2
+        assert float(environment["APC_MEMORY_MAX_GB"]) > 0
+        assert "APC_NUM_BLOCKS" not in environment, (
+            "pinning one block defeats upstream's shared-prefix reuse"
+        )
+        assert environment["LOCAL_LLM_ALLOW_MISSING_VISION"] == "1"
 
     assert "--draft-model" not in serial.command
     assert "--draft-model" not in serial_turbo4.command

@@ -297,7 +297,7 @@ engine = "mlx-vlm"
 description = "Muse Glimmer 30B AWQ 4-bit text-first coding runtime; lazy vision, one reusable 131K prefix snapshot"
 port = 8098
 health_path = "/health"
-environment = { APC_ENABLED = "1", APC_NUM_BLOCKS = "1", APC_EXACT_CACHE_ENTRIES = "1" }
+environment = { APC_ENABLED = "1", APC_EXACT_CACHE_ENTRIES = "2", APC_MEMORY_MAX_GB = "4" }
 command = [
   "{PYTHON_BIN}", "-m", "local_llm_control.mlx_vlm_text_server",
   "--model", "{MUSE_GLIMMER_AWQ_MODEL}",
@@ -336,7 +336,7 @@ engine = "mlx-vlm"
 description = "Experimental Muse AWQ4 + fixed-4 DFlash + exact append-prefix reuse; 8K follow-up measured 104x faster, decode slower than plain"
 port = 8098
 health_path = "/health"
-environment = { APC_ENABLED = "1", APC_NUM_BLOCKS = "1", APC_EXACT_CACHE_ENTRIES = "1" }
+environment = { APC_ENABLED = "1", APC_EXACT_CACHE_ENTRIES = "2", APC_MEMORY_MAX_GB = "4" }
 command = [
   "{PYTHON_BIN}", "-m", "local_llm_control.mlx_vlm_cached_dflash_server",
   "--model", "{MUSE_GLIMMER_AWQ_MODEL}",
@@ -424,7 +424,7 @@ engine = "mlx-vlm"
 description = "Qwen3.8 27B affine Q4 serial control; native KV, 262K request ceiling, reusable exact prefixes"
 port = 8098
 health_path = "/health"
-environment = { APC_ENABLED = "1", APC_NUM_BLOCKS = "1", APC_EXACT_CACHE_ENTRIES = "1", LOCAL_LLM_ALLOW_MISSING_VISION = "1" }
+environment = { APC_ENABLED = "1", APC_EXACT_CACHE_ENTRIES = "2", APC_MEMORY_MAX_GB = "4", LOCAL_LLM_ALLOW_MISSING_VISION = "1" }
 command = [
   "{PYTHON_BIN}", "-m", "local_llm_control.mlx_vlm_text_server",
   "--model", "{QWEN38_MTP_MODEL}",
@@ -451,7 +451,7 @@ health_path = "/health"
 # so an OpenAI-standard "high" or "minimal" would fail the whole request. The
 # alias map fixes that; the default replaces the template's own xhigh, which
 # spends most of the output budget thinking on this hardware.
-environment = { APC_ENABLED = "1", APC_NUM_BLOCKS = "1", APC_EXACT_CACHE_ENTRIES = "1", LOCAL_LLM_ALLOW_MISSING_VISION = "1", LOCAL_LLM_QWEN_REASONING_ALIASES = "1", LOCAL_LLM_QWEN_REASONING_DEFAULT = "medium" }
+environment = { APC_ENABLED = "1", APC_EXACT_CACHE_ENTRIES = "2", APC_MEMORY_MAX_GB = "4", LOCAL_LLM_ALLOW_MISSING_VISION = "1", LOCAL_LLM_QWEN_REASONING_ALIASES = "1", LOCAL_LLM_QWEN_REASONING_DEFAULT = "medium" }
 command = [
   "{PYTHON_BIN}", "-m", "local_llm_control.mlx_vlm_text_server",
   "--model", "{QWEN38_MTP_MODEL}",
@@ -473,7 +473,7 @@ engine = "mlx-vlm"
 description = "PRODUCTION 250K: serial Q4 + Turbo4, 512-token cold-prefill chunks; 262K ceiling, validated locally through 32K"
 port = 8098
 health_path = "/health"
-environment = { APC_ENABLED = "1", APC_NUM_BLOCKS = "1", APC_EXACT_CACHE_ENTRIES = "1", LOCAL_LLM_ALLOW_MISSING_VISION = "1", LOCAL_LLM_QWEN_REASONING_ALIASES = "1", LOCAL_LLM_QWEN_REASONING_DEFAULT = "medium" }
+environment = { APC_ENABLED = "1", APC_EXACT_CACHE_ENTRIES = "2", APC_MEMORY_MAX_GB = "4", LOCAL_LLM_ALLOW_MISSING_VISION = "1", LOCAL_LLM_QWEN_REASONING_ALIASES = "1", LOCAL_LLM_QWEN_REASONING_DEFAULT = "medium" }
 command = [
   "{PYTHON_BIN}", "-m", "local_llm_control.mlx_vlm_text_server",
   "--model", "{QWEN38_MTP_MODEL}",
@@ -681,7 +681,7 @@ engine = "mlx-vlm"
 description = "BENCHMARK ONLY: native Q4 MTP fixed-4; slower on coding than serial decode on this M1 Max"
 port = 8098
 health_path = "/health"
-environment = { APC_ENABLED = "1", APC_NUM_BLOCKS = "1", APC_EXACT_CACHE_ENTRIES = "1", LOCAL_LLM_ALLOW_MISSING_VISION = "1" }
+environment = { APC_ENABLED = "1", APC_EXACT_CACHE_ENTRIES = "2", APC_MEMORY_MAX_GB = "4", LOCAL_LLM_ALLOW_MISSING_VISION = "1" }
 command = [
   "{PYTHON_BIN}", "-m", "local_llm_control.mlx_vlm_text_server",
   "--model", "{QWEN38_MTP_MODEL}",
@@ -703,7 +703,7 @@ engine = "mlx-vlm"
 description = "BENCHMARK ONLY: native Q4 MTP one-draft verify; 14.2 tok/s despite 100% acceptance"
 port = 8098
 health_path = "/health"
-environment = { APC_ENABLED = "1", APC_NUM_BLOCKS = "1", APC_EXACT_CACHE_ENTRIES = "1", LOCAL_LLM_ALLOW_MISSING_VISION = "1" }
+environment = { APC_ENABLED = "1", APC_EXACT_CACHE_ENTRIES = "2", APC_MEMORY_MAX_GB = "4", LOCAL_LLM_ALLOW_MISSING_VISION = "1" }
 command = [
   "{PYTHON_BIN}", "-m", "local_llm_control.mlx_vlm_text_server",
   "--model", "{QWEN38_MTP_MODEL}",
@@ -725,7 +725,7 @@ engine = "mlx-vlm"
 description = "BENCHMARK ONLY: Yukon-style adaptive MTP; 9.1 tok/s on M1 due full-vocabulary draft projection"
 port = 8098
 health_path = "/health"
-environment = { APC_ENABLED = "1", APC_NUM_BLOCKS = "1", APC_EXACT_CACHE_ENTRIES = "1", LOCAL_LLM_MTP_HEAD_COST_RATIO = "0.18", LOCAL_LLM_ALLOW_MISSING_VISION = "1" }
+environment = { APC_ENABLED = "1", APC_EXACT_CACHE_ENTRIES = "2", APC_MEMORY_MAX_GB = "4", LOCAL_LLM_MTP_HEAD_COST_RATIO = "0.18", LOCAL_LLM_ALLOW_MISSING_VISION = "1" }
 command = [
   "{PYTHON_BIN}", "-m", "local_llm_control.mlx_vlm_adaptive_mtp_server",
   "--model", "{QWEN38_MTP_MODEL}",
@@ -747,7 +747,7 @@ engine = "mlx-vlm"
 description = "BENCHMARK ONLY: native MTP + real Turbo4 KV; serial Turbo4 is faster and recommended"
 port = 8098
 health_path = "/health"
-environment = { APC_ENABLED = "1", APC_NUM_BLOCKS = "1", APC_EXACT_CACHE_ENTRIES = "1", LOCAL_LLM_ALLOW_MISSING_VISION = "1" }
+environment = { APC_ENABLED = "1", APC_EXACT_CACHE_ENTRIES = "2", APC_MEMORY_MAX_GB = "4", LOCAL_LLM_ALLOW_MISSING_VISION = "1" }
 command = [
   "{PYTHON_BIN}", "-m", "local_llm_control.mlx_vlm_text_server",
   "--model", "{QWEN38_MTP_MODEL}",
